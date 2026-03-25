@@ -22,10 +22,9 @@ from rclpy.node import Node
 from builtin_interfaces.msg import Duration
 from control_msgs.msg import JointTrajectoryControllerState
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+from geometry_msgs.msg import Twist
 
-# from moveit.planning import MoveItPy
-from moveit_msgs.srv import GetPositionIK
-from geometry_msgs.msg import Pose
+from ros2_octo.msg import OctoObservation, OctoAction
 
 from octo.model.octo_model import OctoModel
 
@@ -36,7 +35,6 @@ class OctoPolicy(Node):
         Right now this is just purely used for inference
     """
 
-
     def __init__(model_path: str = ""):
         super().__init__("octo_policy")
 
@@ -44,15 +42,55 @@ class OctoPolicy(Node):
         if model_path == "":
             self.policy = OctoModel.load_pretrained("hf://rail-berkeley/octo-small-1.5")
         
+        self.action_publisher = self.create_publisher(OctoAction, "/octo/action", 1)
+        
+        self.observation_subscriber = self.create_subscription(OctoObservation, "/octo/observation", self.forward_pass_callback, 1)
 
-        # Logger for the OctoPolicy Node
+        
+        
+    
 
-        # 
+    def forward_pass_callback(self, msg: OctoObservation):
+        task = model.create_task(texts = [msg.task])
+        
+        # make obs dict from rest of the msg
 
+        response.action = model.sample_actions(
+            observation,
+            task,
+            unnormalization_statistics=model.dataset_statistics["bridge_dataset"]["action"], 
+        )
+
+        return response
+
+
+class RobotController(Node):
+    """ROS2 node that does the task of actually executing the actions given to it by the octo policy"""
+
+    # TODO: Add functionality for the controller to act in the simulation rather than real robot and vice-versa
+    def __init__(self, robot_pathname: str = "robot_controller"):
+        super.__init__(robot_pathname)
+
+        # Subscribes to the output of the octo policy to be ready to read it's output whenever it's posted.
+        self.octo_subscriber = self.create_subscription(OctoAction, "/octo/action" , self.execute_action_callback, 1)
+
+        # Publisher for updating the actual robot location
+        self.location_publisher = self.create_publisher(msg_type = Twist, topic = f"{robot_pathname}/cmd_vel", qos_profile = 1)
+        
+        # Subscribes to the current joint positions of the robot to ensure command is executed before updating gym wrapper
 
         
 
 
+    def execute_action_callback(self, octo_msg: OctoAction):
+
+        # Convert OctoAction into Twist
+
+        # Publish the octo action to the 
+        self.location_publisher
+
+        # Update the current state within the gym wrapper
+    
 
 class ReachPolicy(Node):
     """ROS2 node for controlling a Gen3 robot's reach policy."""
