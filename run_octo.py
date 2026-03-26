@@ -1,18 +1,3 @@
-#!/usr/bin/env python3
-"""
-run_task_reach.py
---------------------
-
-ROS 2 node that drives a Kinova Gen3 arm with a simple
-open-loop “reach” policy.
-
-* Subscribes to: /joint_trajectory_controller/state
-* Publishes to : /joint_trajectory_controller/joint_trajectory
-* Runs at      : 100 Hz
-
-Author: Louis Le Lay
-"""
-
 import math
 
 import numpy as np
@@ -27,7 +12,10 @@ from geometry_msgs.msg import Twist
 from ros2_octo.msg import OctoObservation, OctoAction
 
 from octo.model.octo_model import OctoModel
+from octo.utils.gym_wrappers import HistoryWrapper, TemporalEnsembleWrapper, RHCWrapper
+from octo.utils.train_callbacks import supply_rng
 
+from gym_environments import KinovaGymEnvironment
 
 class OctoPolicy(Node):
     """
@@ -46,11 +34,7 @@ class OctoPolicy(Node):
         
         self.observation_subscriber = self.create_subscription(OctoObservation, "/octo/observation", self.forward_pass_callback, 1)
 
-        
-        
-    
-
-    def forward_pass_callback(self, msg: OctoObservation):
+    def forward_pass(self, msg: OctoObservation):
         task = model.create_task(texts = [msg.task])
         
         # make obs dict from rest of the msg
@@ -64,33 +48,6 @@ class OctoPolicy(Node):
         return response
 
 
-class RobotController(Node):
-    """ROS2 node that does the task of actually executing the actions given to it by the octo policy"""
-
-    # TODO: Add functionality for the controller to act in the simulation rather than real robot and vice-versa
-    def __init__(self, robot_pathname: str = "robot_controller"):
-        super.__init__(robot_pathname)
-
-        # Subscribes to the output of the octo policy to be ready to read it's output whenever it's posted.
-        self.octo_subscriber = self.create_subscription(OctoAction, "/octo/action" , self.execute_action_callback, 1)
-
-        # Publisher for updating the actual robot location
-        self.location_publisher = self.create_publisher(msg_type = Twist, topic = f"{robot_pathname}/cmd_vel", qos_profile = 1)
-        
-        # Subscribes to the current joint positions of the robot to ensure command is executed before updating gym wrapper
-
-        
-
-
-    def execute_action_callback(self, octo_msg: OctoAction):
-
-        # Convert OctoAction into Twist
-
-        # Publish the octo action to the 
-        self.location_publisher
-
-        # Update the current state within the gym wrapper
-    
 
 class ReachPolicy(Node):
     """ROS2 node for controlling a Gen3 robot's reach policy."""
@@ -281,11 +238,23 @@ class ReachPolicy(Node):
         
 
 def main(args=None):
-    rclpy.init(args=args)
-    node = ReachPolicy()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
+    horizon = 1
+    env = KinovaGymEnvironment()
+
+    env = HistoryWrapper(env, horizon)
+    env = RHCWrapper(env, 50)
+    
+
+    model = OctoModel.load_pretrained("hf://rail-berkeley/octo-small-1.5")
+    policy_fn = supply_rng(
+        partial(
+            model.sample_actions,
+            unnormalization_statistics=model.dataset_statistics["action"],
+        ),
+    )
+
+    
+
 
 if __name__ == '__main__':
     main()
