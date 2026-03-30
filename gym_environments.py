@@ -1,32 +1,43 @@
 import gymnasium as gym
-from rclpy import Node
+import rclpy
+from rclpy.future import Future
 from cv_bridge import CvBridge
 import cv2
 
-from trajectory_msgs.msgs import JointTrajectory, JointTrajectoryPoint
-from control_msgs.msg import JointTrajectoryControllerState
+from geometry_msgs.msg import Twist
 from sensor_msgs.msg import Image
 
 
-class RobotController(Node):
+class RobotController(rclpy.Node):
     """ROS2 node that does the task of actually executing the actions given to it by the octo policy"""
 
     # TODO: Add functionality for the controller to act in the simulation rather than real robot and vice-versa
-    def __init__(self, robot_pathname: str = "joint_twist_controller"):
+    def __init__(self, robot_pathname: str = "kinova_arm"):
         super.__init__(robot_pathname)
 
         # Subscribes to the output of the octo policy to be ready to read it's output whenever it's posted.
         # self.octo_subscriber = self.create_subscription(OctoAction, "/octo/action" , self.execute_action_callback, 1)
 
         # Publisher for updating the actual robot location
-        self.location_publisher = self.create_publisher(msg_type = Twist, topic = f"{robot_pathname}/joint_trajectory", qos_profile = 1)
+        self.location_publisher = self.create_publisher(msg_type = Twist, topic = f"{robot_pathname}/cmd_vel", qos_profile = 10)
         
         # Subscribers that constantly read the current state and update accordingly
-        self.current_pos = {}
-        self.create_subscription(JointTrajectoryControllerState, f"{robot_pathname}/controller_state", 
-                                                                position_callback, 10)
+        # self.current_pos = {}
+        # self.create_subscription(JointTrajectoryControllerState, f"{robot_pathname}/controller_state", 
+                                                                # position_callback, 10)
+                                                                
+        # TF listener to get current end-effector pose
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+
+        #TODO: Determine actual reasonable values for these 
+        self.tolerance = 0.005   # 5mm stopping threshold
+        self.arm_move_timer = self.create_timer(0.05, self._move_arm, auto_start = False)  # 20 Hz
+        self.future = Future()
         
         self.prev_images = []  # Octo takes in last 'x' images, so we'll maintain a list and decide on size later
+        
+        # Is this really needed ??
         self.bridge = CvBridge()
         self.create_subscription(Image, '/camera/image_raw', self.callback, 10)
 
@@ -64,19 +75,48 @@ class RobotController(Node):
         self.current_pos = actual_pos #NOTE: Thread safe ??
 
     def execute_step(self, request, response):
+        self.action = request.action
 
-        # Convert OctoAction into Twist
-        self.logger().info(action)
+        self.logger().debug(f"Recieved action of {action} from octo policy")
 
-        # Publish the octo action to the 
-        self.location_publisher
+        # Start the arm-mover clock, and freeze the node until it reaches the destination
+        self.arm_move_timer.reset()
+        self.spin_until_future_complete(self, self.future)
+       
+        # Output the images of the current state
+        response.images = self.prev_images
 
-        # Update the current state within the gym wrapper
+    def _move_arm(self):
+        t = self.tf_buffer.lookup_transform('base_link', 'tool_frame', rclpy.time.Time())
+            current = np.array([
+                t.transform.translation.x,
+                t.transform.translation.y,
+                t.transform.translation.z,
+            ])
+
+        self.get_logger.debug(f"Arm currently at position {t}")
+
+        error = self.action - current
+        distance = np.linalg.norm(error)
+
+        msg = Twist()
+
+        if distance < self.tolerance:
+            self.location_publisher.publish(msg)
+            self.arm_move_timer.canel()
+            self.future.set_result(True)
+
+        else:
+            #NOTE: We are not handling the orientation of the gripper itself rn
+            velocity =  error / dist  
+            velocity = np.clip(velocity, -0.1, 0.1)  # cap at 10 cm/s 
+            msg.linear.x = velocity[0]
+            msg.linear.y = velocity[1]
+            msg.linear.z = velocity[2]
+            self.location_publisher.publish(msg)
 
     def execute_reset(self, request, response):
 
-
-    
 
 
 
@@ -87,14 +127,13 @@ class KinovaGymEnvironment(gym.Env):
         super().__init__()
 
         # Setup objects needed to control the robot
-        self.rclpy = rclpy.init()
-
+        # self.rclpy = rclpy.init()
         self.node = RobotController()
-        
-    def _EED_to_joint_position(self, action):
-        ...
 
-    def step(self):
+        
+    def step(self, action):
+
+        images = self.node.execute_step(action)
         ...
 
     def reset(self):
