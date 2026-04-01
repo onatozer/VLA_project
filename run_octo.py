@@ -1,5 +1,4 @@
 import math
-
 import numpy as np
 import rclpy
 from rclpy.node import Node
@@ -9,43 +8,46 @@ from control_msgs.msg import JointTrajectoryControllerState
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from geometry_msgs.msg import Twist
 
-from ros2_octo.msg import OctoObservation, OctoAction
+# from ros2_octo.msg import OctoObservation, OctoAction
 
 from octo.model.octo_model import OctoModel
 from octo.utils.gym_wrappers import HistoryWrapper, TemporalEnsembleWrapper, RHCWrapper
 from octo.utils.train_callbacks import supply_rng
 
 from gym_environments import KinovaGymEnvironment
+from functools import partial
+import jax
+import jax.numpy as jnp
 
-class OctoPolicy(Node):
-    """
-        ROS2 Node that sends in the given state to the octo policy and sends the action computed by the policy
-        Right now this is just purely used for inference
-    """
+# class OctoPolicy(Node):
+#     """
+#         ROS2 Node that sends in the given state to the octo policy and sends the action computed by the policy
+#         Right now this is just purely used for inference
+#     """
 
-    def __init__(model_path: str = ""):
-        super().__init__("octo_policy")
+#     def __init__(model_path: str = ""):
+#         super().__init__("octo_policy")
 
-        # If no model path, then just use the pretrained model
-        if model_path == "":
-            self.policy = OctoModel.load_pretrained("hf://rail-berkeley/octo-small-1.5")
+#         # If no model path, then just use the pretrained model
+#         if model_path == "":
+#             self.policy = OctoModel.load_pretrained("hf://rail-berkeley/octo-small-1.5")
         
-        self.action_publisher = self.create_publisher(OctoAction, "/octo/action", 1)
+#         self.action_publisher = self.create_publisher(OctoAction, "/octo/action", 1)
         
-        self.observation_subscriber = self.create_subscription(OctoObservation, "/octo/observation", self.forward_pass_callback, 1)
+#         self.observation_subscriber = self.create_subscription(OctoObservation, "/octo/observation", self.forward_pass_callback, 1)
 
-    def forward_pass(self, msg: OctoObservation):
-        task = model.create_task(texts = [msg.task])
+#     def forward_pass(self, msg: OctoObservation):
+#         task = model.create_task(texts = [msg.task])
         
-        # make obs dict from rest of the msg
+#         # make obs dict from rest of the msg
 
-        response.action = model.sample_actions(
-            observation,
-            task,
-            unnormalization_statistics=model.dataset_statistics["bridge_dataset"]["action"], 
-        )
+#         response.action = model.sample_actions(
+#             observation,
+#             task,
+#             unnormalization_statistics=model.dataset_statistics["bridge_dataset"]["action"], 
+#         )
 
-        return response
+#         return response
 
 
 
@@ -235,23 +237,52 @@ class ReachPolicy(Node):
 
         self.pub.publish(traj)
             
-        
+# def sample_actions(
+#         pretrained_model: OctoModel,
+#         observations,
+#         tasks,
+#         rng,
+#     ):
+#         # add batch dim to observations
+#         observations = jax.tree_map(lambda x: x[None], observations)
+#         actions = pretrained_model.sample_actions(
+#             observations,
+#             tasks,
+#             rng=rng,
+#             unnormalization_statistics=
+#         )
+#         # remove batch dim
+#         return actions[0]
 
 def main(args=None):
     horizon = 1
-    env = KinovaGymEnvironment()
+    # env = KinovaGymEnvironment()
 
-    env = HistoryWrapper(env, horizon)
-    env = RHCWrapper(env, 50)
+    # env = HistoryWrapper(env, horizon)
+    # env = RHCWrapper(env, 50)
     
 
     model = OctoModel.load_pretrained("hf://rail-berkeley/octo-small-1.5")
+    print(model.get_pretty_spec())
+    print(model.dataset_statistics)
+    
     policy_fn = supply_rng(
         partial(
-            model.sample_actions,
-            unnormalization_statistics=model.dataset_statistics["action"],
-        ),
-    )
+            model.sample_actions, 
+            unnormalization_statistics = model.dataset_statistics[ "bridge_dataset" ]["action"])
+        )
+
+    # Dummy obs/task just to make sure that the thing actually works
+    goal_image = jnp.zeros((256, 256, 3), dtype=np.uint8)
+    goal_instruction = "Move the block"
+
+    task = model.create_tasks(texts=[goal_instruction])
+    
+    # action = np.array(policy_fn(observation= goal_image, tasks= task, rng = jax.random.PRNGKey(0),), dtype=np.float64)
+    actions = policy_fn(jax.tree_map(lambda x: x[None], obs), task)
+    actions = actions[0]
+    print(action, action.shape)
+
 
     
 
