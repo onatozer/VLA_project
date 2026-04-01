@@ -1,19 +1,23 @@
 import gymnasium as gym
-import rclpy
-from rclpy.future import Future
 from cv_bridge import CvBridge
-import cv2
+# import cv2
+import rclpy
+from rclpy.node import Node
+from rclpy.task import Future
 
+from tf2_ros import Buffer, TransformListener
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import Image
 
 
-class RobotController(rclpy.Node):
+class RobotController(Node):
     """ROS2 node that does the task of actually executing the actions given to it by the octo policy"""
 
     # TODO: Add functionality for the controller to act in the simulation rather than real robot and vice-versa
     def __init__(self, robot_pathname: str = "kinova_arm"):
-        super.__init__(robot_pathname)
+        rclpy.init()
+        
+        super().__init__(robot_pathname)
 
         # Subscribes to the output of the octo policy to be ready to read it's output whenever it's posted.
         # self.octo_subscriber = self.create_subscription(OctoAction, "/octo/action" , self.execute_action_callback, 1)
@@ -32,14 +36,14 @@ class RobotController(rclpy.Node):
 
         #TODO: Determine actual reasonable values for these 
         self.tolerance = 0.005   # 5mm stopping threshold
-        self.arm_move_timer = self.create_timer(0.05, self._move_arm, auto_start = False)  # 20 Hz
+        # self.arm_move_timer = self.create_timer(0.05, self._move_arm, auto_start = False)  # 20 Hz
         self.future = Future()
         
         self.prev_images = []  # Octo takes in last 'x' images, so we'll maintain a list and decide on size later
         
         # Is this really needed ??
         self.bridge = CvBridge()
-        self.create_subscription(Image, '/camera/image_raw', self.callback, 10)
+        self.create_subscription(Image, '/camera/image_raw', self.image_callback, 10)
 
 
     def image_callback(self, msg: Image):
@@ -62,17 +66,17 @@ class RobotController(rclpy.Node):
 
         self.last_time = now
 
-    def position_callback(self, msg: JointTrajectoryControllerState):
-        """
-            Update's the node's member variable on the current state of the robot
-        """
+    # def position_callback(self, msg: JointTrajectoryControllerState):
+    #     """
+    #         Update's the node's member variable on the current state of the robot
+    #     """
 
-        actual_pos = {}
-        for i, joint_name in enumerate(msg.joint_names):
-            joint_pos = msg.actual.positions[i]
-            actual_pos[joint_name] = joint_pos
+    #     actual_pos = {}
+    #     for i, joint_name in enumerate(msg.joint_names):
+    #         joint_pos = msg.actual.positions[i]
+    #         actual_pos[joint_name] = joint_pos
 
-        self.current_pos = actual_pos #NOTE: Thread safe ??
+    #     self.current_pos = actual_pos #NOTE: Thread safe ??
 
     def execute_step(self, request, response):
         self.action = request.action
@@ -80,7 +84,7 @@ class RobotController(rclpy.Node):
         self.logger().debug(f"Recieved action of {action} from octo policy")
 
         # Start the arm-mover clock, and freeze the node until it reaches the destination
-        self.arm_move_timer.reset()
+        self.arm_move_timer = self.create_timer(0.05, self._move_arm)  # 20 Hz
         self.spin_until_future_complete(self, self.future)
        
         # Output the images of the current state
@@ -88,11 +92,12 @@ class RobotController(rclpy.Node):
 
     def _move_arm(self):
         t = self.tf_buffer.lookup_transform('base_link', 'tool_frame', rclpy.time.Time())
-            current = np.array([
-                t.transform.translation.x,
-                t.transform.translation.y,
-                t.transform.translation.z,
-            ])
+        
+        current = np.array([
+            t.transform.translation.x,
+            t.transform.translation.y,
+            t.transform.translation.z,
+        ])
 
         self.get_logger.debug(f"Arm currently at position {t}")
 
@@ -102,8 +107,9 @@ class RobotController(rclpy.Node):
         msg = Twist()
 
         if distance < self.tolerance:
+            # Arm has reached the destination
             self.location_publisher.publish(msg)
-            self.arm_move_timer.canel()
+            self.arm_move_timer.destory()
             self.future.set_result(True)
 
         else:
@@ -116,7 +122,7 @@ class RobotController(rclpy.Node):
             self.location_publisher.publish(msg)
 
     def execute_reset(self, request, response):
-
+        ...
 
 
 
@@ -127,15 +133,26 @@ class KinovaGymEnvironment(gym.Env):
         super().__init__()
 
         # Setup objects needed to control the robot
-        # self.rclpy = rclpy.init()
         self.node = RobotController()
 
-        
+        self.observation_space = gym.spaces.Dict({
+            "image_primary": gym.spaces.Box(
+                low=0,
+                high=255,
+                shape=(256, 256, 3),
+                dtype=np.uint8,
+            ),
+        })
+                
+
     def step(self, action):
+        obs = {}
 
         images = self.node.execute_step(action)
+        obs["image_primary"] = images
         ...
 
     def reset(self):
+        ...
         
 
