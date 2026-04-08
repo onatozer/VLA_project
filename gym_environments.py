@@ -1,6 +1,7 @@
 import gymnasium as gym
+import numpy as np
 from cv_bridge import CvBridge
-# import cv2
+from queue import Queue
 import rclpy
 from rclpy.node import Node
 from rclpy.task import Future
@@ -9,6 +10,19 @@ from tf2_ros import Buffer, TransformListener
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import Image
 
+
+class SnapshotQueue(Queue):
+    """
+    Helper class that allows us to view the current queue in a thread-safe manner, as suggeted by 
+    (https://stackoverflow.com/questions/16686292/how-to-get-the-items-in-queue-without-removing-the-items)
+    """
+    
+    def __init__(self, maxsize: int = 10):
+        super().__init__(maxsize)
+
+    def snapshot(self):
+        with self.mutex:
+            return list(self.queue)
 
 class RobotController(Node):
     """ROS2 node that does the task of actually executing the actions given to it by the octo policy"""
@@ -39,11 +53,12 @@ class RobotController(Node):
         # self.arm_move_timer = self.create_timer(0.05, self._move_arm, auto_start = False)  # 20 Hz
         self.future = Future()
         
-        self.prev_images = []  # Octo takes in last 'x' images, so we'll maintain a list and decide on size later
+        self.prev_images = SnapshotQueue()
         
-        # Is this really needed ??
         self.bridge = CvBridge()
         self.create_subscription(Image, '/camera/image_raw', self.image_callback, 10)
+        
+        self.get_logger().info("Finished initializing RobotController node")
 
 
     def image_callback(self, msg: Image):
@@ -59,10 +74,7 @@ class RobotController(Node):
             return
 
         cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
-        self.prev_images.append(cv_image)
-
-        if len(self.prev_images) > 100:
-            self.prev_images = self.prev_images[1:]
+        self.prev_images.put(cv_image)
 
         self.last_time = now
 
@@ -78,17 +90,18 @@ class RobotController(Node):
 
     #     self.current_pos = actual_pos #NOTE: Thread safe ??
 
-    def execute_step(self, request, response):
-        self.action = request.action
+    def execute_step(self, action):
+        self.action = action
 
-        self.logger().debug(f"Recieved action of {action} from octo policy")
+        self.get_logger().debug(f"Recieved action of {action} from octo policy")
 
         # Start the arm-mover clock, and freeze the node until it reaches the destination
+        self.future.set_result(False)
         self.arm_move_timer = self.create_timer(0.05, self._move_arm)  # 20 Hz
         self.spin_until_future_complete(self, self.future)
        
         # Output the images of the current state
-        response.images = self.prev_images
+        return self.prev_images.snapshot()
 
     def _move_arm(self):
         t = self.tf_buffer.lookup_transform('base_link', 'tool_frame', rclpy.time.Time())
@@ -121,9 +134,11 @@ class RobotController(Node):
             msg.linear.z = velocity[2]
             self.location_publisher.publish(msg)
 
-    def execute_reset(self, request, response):
-        ...
-
+    def execute_reset(self):
+        #TODO: Probably want to decide on some type of 'starting position' for the arm and reset it back to that positon on reset
+        self.get_logger().debug(f"Resetting Kinova arm")
+        
+        return self.prev_images.snapshot()
 
 
 class KinovaGymEnvironment(gym.Env):
@@ -150,9 +165,22 @@ class KinovaGymEnvironment(gym.Env):
 
         images = self.node.execute_step(action)
         obs["image_primary"] = images
-        ...
+        
+        reward = 0.0
+        terminated = False
+        truncated = False
+        info = {}
+        return obs, reward, terminated, truncated, info
 
-    def reset(self):
-        ...
+    def reset(self, seed, options): # arguments carry no meaning here, but still including so program doesn't error
+        obs = {}
+
+        images = self.node.execute_reset()
+        obs["image_primary"] = images
+        
+        info = {}
+        return obs, info
+
+        
         
 
