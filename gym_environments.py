@@ -5,9 +5,10 @@ from queue import Queue
 import rclpy
 from rclpy.node import Node
 from rclpy.task import Future
+import threading
 
 from tf2_ros import Buffer, TransformListener
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import TwistStamped
 from sensor_msgs.msg import Image
 
 
@@ -29,15 +30,16 @@ class RobotController(Node):
 
     # TODO: Add functionality for the controller to act in the simulation rather than real robot and vice-versa
     def __init__(self, robot_pathname: str = "kinova_arm"):
-        rclpy.init()
         
         super().__init__(robot_pathname)
+        
+        self.get_logger().info("Testing logger")
 
         # Subscribes to the output of the octo policy to be ready to read it's output whenever it's posted.
         # self.octo_subscriber = self.create_subscription(OctoAction, "/octo/action" , self.execute_action_callback, 1)
 
         # Publisher for updating the actual robot location
-        self.location_publisher = self.create_publisher(msg_type = Twist, topic = f"{robot_pathname}/cmd_vel", qos_profile = 10)
+        self.location_publisher = self.create_publisher(msg_type = TwistStamped, topic = f"twist_controller/commands", qos_profile = 10)
         
         # Subscribers that constantly read the current state and update accordingly
         # self.current_pos = {}
@@ -58,13 +60,14 @@ class RobotController(Node):
         self.bridge = CvBridge()
         self.create_subscription(Image, '/camera/image_raw', self.image_callback, 10)
         
-        self.get_logger().info("Finished initializing RobotController node")
+        self.get_logger().debug("Finished initializing RobotController node")
 
 
     def image_callback(self, msg: Image):
         """
            maintain a sliding window of most recently seen images
         """
+        self.get_logger().debug(f"Running image callback on images buffer of size {self.prev_images.qsize()}")
 
         # Create delay in how often we're reading in the image
         now = self.get_clock().now()
@@ -96,9 +99,18 @@ class RobotController(Node):
         self.get_logger().debug(f"Recieved action of {action} from octo policy")
 
         # Start the arm-mover clock, and freeze the node until it reaches the destination
-        self.future.set_result(False)
-        self.arm_move_timer = self.create_timer(0.05, self._move_arm)  # 20 Hz
-        self.spin_until_future_complete(self, self.future)
+        # self.future = Future()
+        # self.arm_move_timer = self.create_timer(0.05, self._move_arm) # 20 Hz
+        # self.get_logger().debug(f"{self.future.done()}")
+        # rclpy.spin_until_future_complete(self, self.future)
+
+        # Use a threading Event instead of a Future — safe across threads
+        self._move_done_event = threading.Event()
+
+        self.arm_move_timer = self.create_timer(0.05, self._move_arm)
+        
+        # Block main thread until _move_arm signals completion
+        self._move_done_event.wait() #NOTE: Can add a timeout so that thread won't freeze if we don't reach the destination
        
         # Output the images of the current state
         return self.prev_images.snapshot()
@@ -112,31 +124,41 @@ class RobotController(Node):
             t.transform.translation.z,
         ])
 
-        self.get_logger.debug(f"Arm currently at position {t}")
+        self.get_logger().debug(f"Arm currently at position {t}")
 
-        error = self.action - current
+        # TODO: Also decide how we're gonna handle angular rotation
+
+        # indicies from 0-2 of the action deal with the EED position 
+        error = self.action[0:3] - current
         distance = np.linalg.norm(error)
+        # self.get_logger().debug(f"err_vec {type(error)} Distance {type(distance)}")
+        # Error <class 'jaxlib.xla_extension.ArrayImpl'> Distance <class 'numpy.float32'>
 
-        msg = Twist()
+        msg = TwistStamped()
 
         if distance < self.tolerance:
             # Arm has reached the destination
             self.location_publisher.publish(msg)
-            self.arm_move_timer.destory()
-            self.future.set_result(True)
+            self.arm_move_timer.destroy()
+            self._move_done_event.set() # Let the thread running this know we're done and it can stop blocking
 
         else:
             #NOTE: We are not handling the orientation of the gripper itself rn
-            velocity =  error / dist  
+            velocity =  error / distance  
             velocity = np.clip(velocity, -0.1, 0.1)  # cap at 10 cm/s 
-            msg.linear.x = velocity[0]
-            msg.linear.y = velocity[1]
-            msg.linear.z = velocity[2]
+            self.get_logger().debug(f"Velocity {velocity}")
+            
+            msg.header.stamp = self.get_clock().now().to_msg()
+            msg.header.frame_id = 'base_link'
+            msg.twist.linear.x = float(velocity[0])
+            msg.twist.linear.y = float(velocity[1])
+            msg.twist.linear.z = float(velocity[2])
             self.location_publisher.publish(msg)
 
     def execute_reset(self):
         #TODO: Probably want to decide on some type of 'starting position' for the arm and reset it back to that positon on reset
-        self.get_logger().debug(f"Resetting Kinova arm")
+        self.get_logger().debug(f"Resetting Kinova arm. Image queue has size {self.prev_images.qsize()}")
+
         
         return self.prev_images.snapshot()
 
@@ -148,6 +170,15 @@ class KinovaGymEnvironment(gym.Env):
         super().__init__()
 
         # Setup objects needed to control the robot
+        # Track if we initialized rclpy (so we know if we should shut it down)
+        self._rclpy_initialized_here = False
+        
+        # Only init if not already initialized (safety for multiple envs)
+        if not rclpy.ok():
+            rclpy.init()
+            self._rclpy_initialized_here = True
+            
+        rclpy.logging.set_logger_level('kinova_arm', rclpy.logging.LoggingSeverity.DEBUG)
         self.node = RobotController()
 
         self.observation_space = gym.spaces.Dict({
@@ -158,6 +189,14 @@ class KinovaGymEnvironment(gym.Env):
                 dtype=np.uint8,
             ),
         })
+        
+        # Keep the robot controller node constantly spinning in seperate thread so that latest images are properly updated
+        self._spin_thread = threading.Thread(target=rclpy.spin, args=(self.node,), daemon = True)
+        self._spin_thread.start()
+
+        print("Finished initializing the threads")
+
+        self._is_closed = False
                 
 
     def step(self, action):
@@ -181,6 +220,32 @@ class KinovaGymEnvironment(gym.Env):
         info = {}
         return obs, info
 
+    def close(self):
+        """Gym API method - called automatically when env is deleted or manually"""
+        if self._is_closed:
+            return
+            
+        self._is_closed = True
+        
+        # 1. Destroy the node (stops accepting callbacks)
+        if self.node:
+            self.node.destroy_node()
+            
+        # 2. Shutdown ROS (this makes rclpy.spin() return in the thread)
+        if self._rclpy_initialized_here and rclpy.ok():
+            rclpy.shutdown()
+            
+        # 3. Wait for thread to die (with timeout so we don't hang)
+        if hasattr(self, '_spin_thread') and self._spin_thread.is_alive():
+            self._spin_thread.join(timeout=2.0)
+            
+        super().close()
+        print("Close finished")
+
+    def __del__(self):
+        """Destructor - safety net in case close() wasn't called"""
+        print("Delete is being called")
+        self.close()
         
         
 
