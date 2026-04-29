@@ -25,6 +25,7 @@ class SnapshotQueue(Queue):
         with self.mutex:
             return list(self.queue)
 
+
 class RobotController(Node):
     """ROS2 node that does the task of actually executing the actions given to it by the octo policy"""
 
@@ -81,18 +82,6 @@ class RobotController(Node):
 
         self.last_time = now
 
-    # def position_callback(self, msg: JointTrajectoryControllerState):
-    #     """
-    #         Update's the node's member variable on the current state of the robot
-    #     """
-
-    #     actual_pos = {}
-    #     for i, joint_name in enumerate(msg.joint_names):
-    #         joint_pos = msg.actual.positions[i]
-    #         actual_pos[joint_name] = joint_pos
-
-    #     self.current_pos = actual_pos #NOTE: Thread safe ??
-
     def execute_step(self, action):
         self.action = action
 
@@ -104,7 +93,6 @@ class RobotController(Node):
         # self.get_logger().debug(f"{self.future.done()}")
         # rclpy.spin_until_future_complete(self, self.future)
 
-        # Use a threading Event instead of a Future — safe across threads
         self._move_done_event = threading.Event()
 
         self.arm_move_timer = self.create_timer(0.05, self._move_arm)
@@ -153,6 +141,7 @@ class RobotController(Node):
             msg.twist.linear.x = float(velocity[0])
             msg.twist.linear.y = float(velocity[1])
             msg.twist.linear.z = float(velocity[2])
+            self.get_logger().debug(f"Publishing twist message {msg}")
             self.location_publisher.publish(msg)
 
     def execute_reset(self):
@@ -170,13 +159,10 @@ class KinovaGymEnvironment(gym.Env):
         super().__init__()
 
         # Setup objects needed to control the robot
-        # Track if we initialized rclpy (so we know if we should shut it down)
-        self._rclpy_initialized_here = False
         
         # Only init if not already initialized (safety for multiple envs)
         if not rclpy.ok():
             rclpy.init()
-            self._rclpy_initialized_here = True
             
         rclpy.logging.set_logger_level('kinova_arm', rclpy.logging.LoggingSeverity.DEBUG)
         self.node = RobotController()
@@ -232,7 +218,7 @@ class KinovaGymEnvironment(gym.Env):
             self.node.destroy_node()
             
         # 2. Shutdown ROS (this makes rclpy.spin() return in the thread)
-        if self._rclpy_initialized_here and rclpy.ok():
+        if rclpy.ok():
             rclpy.shutdown()
             
         # 3. Wait for thread to die (with timeout so we don't hang)
@@ -247,5 +233,70 @@ class KinovaGymEnvironment(gym.Env):
         print("Delete is being called")
         self.close()
         
+
+class IsaacSimEnvironment(gym.Env):
+    """
+        Class that basically acts as a wrapper over the socket commands that send the Octo actions to the actual IsaacSim environment
+        setup in another docker container
+    """
+
+    def __init__(self):
+        super().__init__()
+
+    def _recv_exactly(self, sock, n):
+        """Receive exactly n bytes from socket, or raise."""
+        chunks = []
+        received = 0
+        while received < n:
+            chunk = sock.recv(min(65536, n - received))
+            if not chunk:
+                raise ConnectionError(f"Expected {n} bytes, got {received}")
+            chunks.append(chunk)
+            received += len(chunk)
+        return b''.join(chunks)
+
+
+    def step(self, action):
+        # Jax has no native way to convert to bytes, so just convert to numpy first
+        buffer = np.array(action).tobytes()
+
+        # Send action to environment
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind((HOST, PORT))
+            s.listen(1)
+            conn, addr = s.accept()
+
+            with conn:
+                buffer = json.dumps(output_dict).encode()
+                header = len(buffer).to_bytes(4, 'big')
+                conn.sendall(header+buffer)
         
+
+        # Recieve response from the environment
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind((HOST, PORT))
+            s.listen(1)
+            conn, addr = s.accept()
+
+            header = self._recv_exactly(s, 4)
+            msg_len = int.from_bytes(header, "big")
+            payload = self._recv_exactly(s, msg_len)
+
+            gym_output = json.loads(payload)
+
+        obs = gym_output["obs"]
+        reward = gym_output["reward"]
+        terminated = gym_output["terminated"]
+        truncated = gym_output["truncated"]
+        info = gym_output["info"]
+
+        return gym_output.values()
+            
+
+
+
+    # Does this even make sense ??
+    def reset(self):
+        ...
+
 
