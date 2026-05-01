@@ -234,7 +234,7 @@ class KinovaGymEnvironment(gym.Env):
         self.close()
         
 
-class IsaacSimEnvironment(gym.Env):
+class IsaacSimWrapper():
     """
         Class that basically acts as a wrapper over the socket commands that send the Octo actions to the actual IsaacSim environment
         setup in another docker container
@@ -242,6 +242,9 @@ class IsaacSimEnvironment(gym.Env):
 
     def __init__(self):
         super().__init__()
+        self.isaac_sim_port = 6_000
+        # self.octo_port = 5_000
+        self.host = "0.0.0.0"
 
     def _recv_exactly(self, sock, n):
         """Receive exactly n bytes from socket, or raise."""
@@ -262,7 +265,7 @@ class IsaacSimEnvironment(gym.Env):
 
         # Send action to environment
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind((HOST, PORT))
+            s.bind((self.host, self.isaac_sim_port))
             s.listen(1)
             conn, addr = s.accept()
 
@@ -274,7 +277,7 @@ class IsaacSimEnvironment(gym.Env):
 
         # Recieve response from the environment
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind((HOST, PORT))
+            s.bind((self.host, self.isaac_sim_port))
             s.listen(1)
             conn, addr = s.accept()
 
@@ -290,13 +293,10 @@ class IsaacSimEnvironment(gym.Env):
         truncated = gym_output["truncated"]
         info = gym_output["info"]
 
-        return gym_output.values()
+        #TODO: Format the obs the 'octo' way
+
+        return obs, reward, terminated, truncated, info
             
 
-
-
-    # Does this even make sense ??
-    def reset(self):
-        ...
 
 

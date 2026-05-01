@@ -1,0 +1,7 @@
+services:
+  isaac-lab-base:
+    volumes:
+      - type: bind
+        source: $ISAAC_SCRIPTS_DIR/
+        target: ${DOCKER_ISAACLAB_PATH}/Isaac-lab-scripts
+      

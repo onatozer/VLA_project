@@ -1,11 +1,10 @@
-"""Launch Isaac Sim Simulator first."""
 from isaaclab.app import AppLauncher
 
-# launch omniverse app
+# launch omniverse app (has to be running before the other imports)
 app_launcher = AppLauncher(headless=True)
 simulation_app = app_launcher.app
 
-"""Rest everything follows."""
+
 import gymnasium as gym
 import torch
 import socket
@@ -15,17 +14,24 @@ from isaaclab_tasks.utils import parse_env_cfg
 
 import json
 
-with open("env_config.json", r) as file:
+with open("env_config.json", "r") as file:
     configs = json.load(file)
 
 #Task name needs to be passed into botht he parse_env_cfg function and gym.make function
-task_name = configs["TASK_NAME"]
+task_name = configs["task_name"]
 
 env_cfg = parse_env_cfg(**configs)
 
 env = gym.make(task_name, cfg=env_cfg)
 obs, info = env.reset()
 output_dict = {"obs": obs, "info": info}
+
+
+# Port value for isaac sim container is hard-coded to 6,000 and octo container 5,000. There's probably a better practice, but for this case its fine
+ISAACSIM_PORT = 6_000
+OCTO_PORT = 5_000
+
+HOST = "0.0.0.0"
 
 
 
@@ -42,12 +48,11 @@ def recv_exactly(sock, n):
         received += len(chunk)
     return b''.join(chunks)
 
-
-# TODO: Determine an actual stopping condition (if at all), envs will just run forever if not interrupted
+# TODO: Determine an actual stopping condition (if at all), envs will just run forever if not interrupted, maybe that's also fine
 while simulation_app.is_running():
     # Send the environment observation to the octo policy
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind((HOST, PORT))
+        s.bind((HOST, OCTO_PORT))
         s.listen(1)
         conn, addr = s.accept()
         with conn:
@@ -58,7 +63,7 @@ while simulation_app.is_running():
         
     # Read in the action given by Octo
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.connect((HOST, PORT))
+        s.connect((HOST, OCTO_PORT))
 
         header = s.recv_exactly(s,4)
         msg_len = int.from_bytes(header, 'big')
