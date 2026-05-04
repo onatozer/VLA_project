@@ -1,5 +1,11 @@
 services:
   isaac-lab-base:
+    build:
+      dockerfile: $ISAAC_SCRIPTS_DIR/Dockerfile
+      args:
+        - GEN3_REPO_URL=https://github.com/louislelay/kinova_isaaclab_sim2real.git
+        - GEN3_BRANCH=main
+      
     volumes:
       - type: bind
         source: $ISAAC_SCRIPTS_DIR/
