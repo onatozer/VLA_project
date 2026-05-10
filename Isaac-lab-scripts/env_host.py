@@ -11,20 +11,25 @@ import socket
 
 import isaaclab_tasks  # noqa: F401 — this registers all envs in the gym registry
 from isaaclab_tasks.utils import parse_env_cfg  
+import gen3.tasks
+
 
 import json
 
+# Probably overkill to be doing this, but leaving it for now
 with open("env_config.json", "r") as file:
     configs = json.load(file)
 
 #Task name needs to be passed into botht he parse_env_cfg function and gym.make function
-task_name = configs["task_name"]
+task_name = "Gen3-Reach-v0"
 
 env_cfg = parse_env_cfg(**configs)
 
 env = gym.make(task_name, cfg=env_cfg)
+# print(gym.observation_space)
 obs, info = env.reset()
 output_dict = {"obs": obs, "info": info}
+# print(output_dict)
 
 
 # Port value for isaac sim container is hard-coded to 6,000 and octo container 5,000. There's probably a better practice, but for this case its fine
@@ -52,6 +57,7 @@ def recv_exactly(sock, n):
 while simulation_app.is_running():
     # Send the environment observation to the octo policy
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        print(f"Sending obs to octo policy {output_dict}")
         s.bind((HOST, OCTO_PORT))
         s.listen(1)
         conn, addr = s.accept()
@@ -63,6 +69,7 @@ while simulation_app.is_running():
         
     # Read in the action given by Octo
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        print("Reading in Octo policy action")
         s.connect((HOST, OCTO_PORT))
 
         header = s.recv_exactly(s,4)

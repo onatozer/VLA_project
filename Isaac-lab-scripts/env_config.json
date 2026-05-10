@@ -1,4 +1,4 @@
 {
-    "task_name": "Isaac-Reach-UR10-v0",
-    "NUM_ENVS": 1
+    "task_name": "Gen3-Reach-v0",
+    "num_envs": 1
 }
