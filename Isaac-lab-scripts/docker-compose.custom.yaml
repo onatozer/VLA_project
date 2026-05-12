@@ -12,5 +12,5 @@ services:
         target: ${DOCKER_ISAACLAB_PATH}/Isaac-lab-scripts
       - type: bind
         source: $ISAAC_SCRIPTS_DIR/../gen3_isaac_env
-        target: ${DOCKER_ISAACLAB_PATH}/../outside_dir/sim2real
+        target: ${DOCKER_ISAACLAB_PATH}/../sim2real
       
