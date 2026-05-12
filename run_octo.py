@@ -16,7 +16,7 @@ from octo.model.octo_model import OctoModel
 from octo.utils.gym_wrappers import HistoryWrapper, TemporalEnsembleWrapper, RHCWrapper
 from octo.utils.train_callbacks import supply_rng
 
-from gym_environments import KinovaGymEnvironment
+from gym_environments import KinovaGymEnvironment, IsaacSimWrapper
 from functools import partial
 import jax
 import jax.numpy as jnp
@@ -26,13 +26,15 @@ import tensorflow_datasets as tfds
 def main(args=None):
     horizon = 1
 
-    env = KinovaGymEnvironment()
+    # env = KinovaGymEnvironment()
+    env = IsaacSimWrapper()
     env = HistoryWrapper(env, horizon)
     env = RHCWrapper(env, 1)
     
     obs, info = env.reset()
     print("-"*10)
     print(obs)
+    print(info)
     print("-"*10)
     
     model = OctoModel.load_pretrained("hf://rail-berkeley/octo-small-1.5")

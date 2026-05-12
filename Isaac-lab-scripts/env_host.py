@@ -1,7 +1,7 @@
 from isaaclab.app import AppLauncher
 
 # launch omniverse app (has to be running before the other imports)
-app_launcher = AppLauncher(headless=True)
+app_launcher = AppLauncher(headless=True, enable_cameras = True)
 simulation_app = app_launcher.app
 
 
@@ -28,7 +28,6 @@ env_cfg = parse_env_cfg(**configs)
 env = gym.make(task_name, cfg=env_cfg)
 # print(gym.observation_space)
 obs, info = env.reset()
-output_dict = {"obs": obs, "info": info}
 # print(output_dict)
 
 
@@ -58,34 +57,37 @@ while simulation_app.is_running():
     # Send the environment observation to the octo policy
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         print(f"Sending obs to octo policy {output_dict}")
-        s.bind((HOST, OCTO_PORT))
+        s.bind((HOST, ISAACSIM_PORT))
+        print("binded") 
         s.listen(1)
+        print("listened") 
         conn, addr = s.accept()
+        connected_to_octo_container = True
+        
+        print("Accepted connection")
         with conn:
-            payload = json.dumps(output_dict).encode()
-            header = len(payload).to_bytes(4, 'big')
-            conn.sendall(header+payload)
-            
-        
-    # Read in the action given by Octo
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        print("Reading in Octo policy action")
-        s.connect((HOST, OCTO_PORT))
+            # TODO: Think of a stopping condition (if at all) for this
+            while(True):
+                # The pattern for interacting with the Octo policy is going to be just repeatingly recieving the data it sends,
+                # and sending back the environment observation to it
+                
+                header = recv_exactly(conn,4)
+                msg_len = int.from_bytes(header, 'big')
 
-        header = s.recv_exactly(s,4)
-        msg_len = int.from_bytes(header, 'big')
-        buf = recv_exactly(s, msg_len)
-        
-        # output_dict = json.loads(payload)
-        
-        # Reading in numpy byte buffer into torch directly, should be preffered over json because octo output is always the 7-dim array
-        action = torch.frombuffer(buf, dtype=meta['dtype']).reshape(meta['shape'])
+                # We're gonna interperent msg_len of 0 as a reset call, because if no action is set, all that's to be done is to reset the environment
+                if msg_len == 0:
+                    obs,info = env.reset()
+                    output_dict = {"obs": obs, "info": info}
+                    
+                else:
+                    buf = recv_exactly(conn, msg_len)
+                # action = torch.frombuffer(buf, dtype=meta['dtype']).reshape(meta['shape'])
 
-    # Execute the action on the environment itself
-    obs, reward, terminated, truncated, info = env.step()
-    output_dict = {"obs": obs, "reward": reward, "terminated": terminated, "truncated": truncated, "info": info}
-    
+
+                payload = json.dumps(output_dict).encode()
+                header = len(payload).to_bytes(4, 'big')
+                conn.sendall(header+payload)
+
         
-    
 env.close()
 simulation_app.close()

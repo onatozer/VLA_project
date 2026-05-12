@@ -6,6 +6,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.task import Future
 import threading
+import socket
 
 from tf2_ros import Buffer, TransformListener
 from geometry_msgs.msg import TwistStamped
@@ -155,7 +156,7 @@ class RobotController(Node):
 class KinovaGymEnvironment(gym.Env):
     """Wrapper that executes the actions on the Kinova arm itself """
 
-    def __init__(self):
+    def __init__(self, im_size: int = 256):
         super().__init__()
 
         # Setup objects needed to control the robot
@@ -171,7 +172,7 @@ class KinovaGymEnvironment(gym.Env):
             "image_primary": gym.spaces.Box(
                 low=0,
                 high=255,
-                shape=(256, 256, 3),
+                shape=(im_size, im_size , 3),
                 dtype=np.uint8,
             ),
         })
@@ -234,17 +235,30 @@ class KinovaGymEnvironment(gym.Env):
         self.close()
         
 
-class IsaacSimWrapper():
+class IsaacSimWrapper(gym.Env):
     """
         Class that basically acts as a wrapper over the socket commands that send the Octo actions to the actual IsaacSim environment
         setup in another docker container
     """
 
-    def __init__(self):
+    # TODO: Better design, there has to be some way to communicate 'step' and 'reset' actions to the env. 
+
+    def __init__(self, im_size: int = 256):
         super().__init__()
         self.isaac_sim_port = 6_000
-        # self.octo_port = 5_000
+        self.octo_port = 5_000
         self.host = "0.0.0.0"
+        
+        # Same observation space as the Kinova Gym environment
+        self.observation_space = gym.spaces.Dict({
+            "image_primary": gym.spaces.Box(
+                low=0,
+                high=255,
+                shape=(im_size, im_size , 3),
+                dtype=np.uint8,
+            ),
+        })
+        
 
     def _recv_exactly(self, sock, n):
         """Receive exactly n bytes from socket, or raise."""
@@ -297,6 +311,34 @@ class IsaacSimWrapper():
 
         return obs, reward, terminated, truncated, info
             
+    def reset(self, seed, options):
+        # Recieve response from the environment
+        print("Receiving from environment")
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind((self.host, self.isaac_sim_port))
+            s.listen(10)
+            print("Listened")
+            conn, addr = s.accept()
+            print("Acceptted connection")
+
+            header = self._recv_exactly(s, 4)
+            print("got header")
+            msg_len = int.from_bytes(header, "big")
+            payload = self._recv_exactly(s, msg_len)
+            print("got payload")
+
+            gym_output = json.loads(payload)
+
+        # Policy key contains all the information that the policy network is permitted to see
+        gym_output = gym_output["policy"]
+
+        gym_obs = gym_output["obs"]
+        gym_info = gym_output["info"]
+
+        obs = {"image_primary": gym_obs["vis_obs_wrist"]}
+        
+        
+        return obs, info
 
 
 
