@@ -56,18 +56,17 @@ def recv_exactly(sock, n):
 while simulation_app.is_running():
     # Send the environment observation to the octo policy
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        print(f"Sending obs to octo policy {output_dict}")
         s.bind((HOST, ISAACSIM_PORT))
         print("binded") 
         s.listen(1)
         print("listened") 
-        conn, addr = s.accept()
-        connected_to_octo_container = True
-        
-        print("Accepted connection")
-        with conn:
-            # TODO: Think of a stopping condition (if at all) for this
-            while(True):
+
+        # TODO: Think of a stopping condition (if at all) for this
+        while(True):
+            conn, addr = s.accept()
+            print("Accepted connection")
+
+            with conn:
                 # The pattern for interacting with the Octo policy is going to be just repeatingly recieving the data it sends,
                 # and sending back the environment observation to it
                 
@@ -84,6 +83,7 @@ while simulation_app.is_running():
                 # action = torch.frombuffer(buf, dtype=meta['dtype']).reshape(meta['shape'])
 
 
+                print(f"Sending output dict of {output_dict}")
                 payload = json.dumps(output_dict).encode()
                 header = len(payload).to_bytes(4, 'big')
                 conn.sendall(header+payload)

@@ -241,13 +241,12 @@ class IsaacSimWrapper(gym.Env):
         setup in another docker container
     """
 
-    # TODO: Better design, there has to be some way to communicate 'step' and 'reset' actions to the env. 
 
-    def __init__(self, im_size: int = 256):
+    def __init__(self, server_host: str = "0.0.0.0", server_port: int = 6_000, im_size: int = 256):
         super().__init__()
-        self.isaac_sim_port = 6_000
-        self.octo_port = 5_000
-        self.host = "0.0.0.0"
+        self.server_address = (server_host, server_port)
+        # self.host = server_host
+        # self.isaac_sim_port = server_port
         
         # Same observation space as the Kinova Gym environment
         self.observation_space = gym.spaces.Dict({
@@ -274,32 +273,32 @@ class IsaacSimWrapper(gym.Env):
 
 
     def step(self, action):
-        # Jax has no native way to convert to bytes, so just convert to numpy first
-        buffer = np.array(action).tobytes()
-
-        # Send action to environment
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind((self.host, self.isaac_sim_port))
-            s.listen(1)
-            conn, addr = s.accept()
-
-            with conn:
-                buffer = json.dumps(output_dict).encode()
-                header = len(buffer).to_bytes(4, 'big')
-                conn.sendall(header+buffer)
         
-
-        # Recieve response from the environment
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind((self.host, self.isaac_sim_port))
-            s.listen(1)
-            conn, addr = s.accept()
-
+            print("Socket initialized")
+                
+            s.connect(self.server_address)
+            print("Acceptted connection")
+            
+            # Jax has no native way to convert to bytes, so just convert to numpy first
+            buffer = np.array(action).tobytes()
+            
+            # First send header indicating the length of the action array
+            header = len(buffer).to_bytes(4, 'big')
+            s.sendall(header)
+            
+            # Then send the actual buffer itself
+            s.sendall(buffer)
+            
+            # Then recieve response from the server
             header = self._recv_exactly(s, 4)
+            print("got header")
             msg_len = int.from_bytes(header, "big")
             payload = self._recv_exactly(s, msg_len)
-
+            print("got payload")
             gym_output = json.loads(payload)
+            
+        gym_output = gym_output["policy"]
 
         obs = gym_output["obs"]
         reward = gym_output["reward"]
@@ -315,18 +314,21 @@ class IsaacSimWrapper(gym.Env):
         # Recieve response from the environment
         print("Receiving from environment")
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind((self.host, self.isaac_sim_port))
-            s.listen(10)
-            print("Listened")
-            conn, addr = s.accept()
-            print("Acceptted connection")
+            print("Socket initialized")
 
+            s.connect(self.server_address)
+            print("Acceptted connection")
+            
+            # First send header of 0 to server to indicate a reset
+            header = 0 .to_bytes(4, 'big')
+            s.sendall(header)
+            
+            # Then recieve response from the server
             header = self._recv_exactly(s, 4)
             print("got header")
             msg_len = int.from_bytes(header, "big")
             payload = self._recv_exactly(s, msg_len)
             print("got payload")
-
             gym_output = json.loads(payload)
 
         # Policy key contains all the information that the policy network is permitted to see
@@ -336,6 +338,7 @@ class IsaacSimWrapper(gym.Env):
         gym_info = gym_output["info"]
 
         obs = {"image_primary": gym_obs["vis_obs_wrist"]}
+        print(F"Returning {obs, info}")
         
         
         return obs, info
