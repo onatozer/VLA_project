@@ -8,6 +8,7 @@ simulation_app = app_launcher.app
 import gymnasium as gym
 import torch
 import socket
+import pickle
 
 import isaaclab_tasks  # noqa: F401 — this registers all envs in the gym registry
 from isaaclab_tasks.utils import parse_env_cfg  
@@ -52,41 +53,70 @@ def recv_exactly(sock, n):
         received += len(chunk)
     return b''.join(chunks)
 
+# Helper function that replaces all the tensors in a dictionary with numpy arrays
+def replace_tensors(input_dict: dict):
+    print(f"Called func {input_dict}")
+    output_dict = {}
+    for key, val in input_dict.items():
+        print(key, val)
+        if isinstance(val, dict):
+            print("Located dict")
+            output_dict[key] = replace_tensors(val)
+        
+        elif torch.is_tensor(val):
+            val = val.cpu().numpy()
+            output_dict[key] = val
+        else:
+            output_dict[key] = val
+        
+    return output_dict
+
+
 # TODO: Determine an actual stopping condition (if at all), envs will just run forever if not interrupted, maybe that's also fine
-while simulation_app.is_running():
-    # Send the environment observation to the octo policy
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind((HOST, ISAACSIM_PORT))
-        print("binded") 
-        s.listen(1)
-        print("listened") 
+try:
+    while simulation_app.is_running():
+        # Send the environment observation to the octo policy
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind((HOST, ISAACSIM_PORT))
+            print("binded") 
+            s.listen(10)
+            print("listened") 
 
-        # TODO: Think of a stopping condition (if at all) for this
-        while(True):
-            conn, addr = s.accept()
-            print("Accepted connection")
+            # TODO: Think of a stopping condition (if at all) for this
+            while(True):
+                conn, addr = s.accept()
+                print("Accepted connection")
 
-            with conn:
-                # The pattern for interacting with the Octo policy is going to be just repeatingly recieving the data it sends,
-                # and sending back the environment observation to it
-                
-                header = recv_exactly(conn,4)
-                msg_len = int.from_bytes(header, 'big')
-
-                # We're gonna interperent msg_len of 0 as a reset call, because if no action is set, all that's to be done is to reset the environment
-                if msg_len == 0:
-                    obs,info = env.reset()
-                    output_dict = {"obs": obs, "info": info}
+                with conn:
+                    # The pattern for interacting with the Octo policy is going to be just repeatingly recieving the data it sends,
+                    # and sending back the environment observation to it
                     
-                else:
-                    buf = recv_exactly(conn, msg_len)
-                # action = torch.frombuffer(buf, dtype=meta['dtype']).reshape(meta['shape'])
+                    header = recv_exactly(conn,4)
+                    msg_len = int.from_bytes(header, 'big')
+
+                    # We're gonna interperent msg_len of 0 as a reset call, because if no action is set, all that's to be done is to reset the environment
+                    if msg_len == 0:
+                        obs, info = env.reset()
+                        
+                        # Convert all the torch tensors into numpy arrays to allow the pickle library to steralize the object
+                        print(obs, info)
+                        output_obs = replace_tensors(obs["policy"])
+                        output_info = replace_tensors(info)
+                        
+                        output_dict = {"obs": output_obs, "info": output_info}
+                        
+                    else:
+                        buf = recv_exactly(conn, msg_len)
+                        octo_action = pickle.loads(buf)
+                    # action = torch.frombuffer(buf, dtype=meta['dtype']).reshape(meta['shape'])
 
 
-                print(f"Sending output dict of {output_dict}")
-                payload = json.dumps(output_dict).encode()
-                header = len(payload).to_bytes(4, 'big')
-                conn.sendall(header+payload)
+                    print(f"Sending output dict of {output_dict}")
+                    payload = pickle.dumps(output_dict)
+                    header = len(payload).to_bytes(4, 'big')
+                    conn.sendall(header+payload)
+except Exception as e:
+    print(e)
 
         
 env.close()

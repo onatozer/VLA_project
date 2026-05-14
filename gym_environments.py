@@ -7,6 +7,7 @@ from rclpy.node import Node
 from rclpy.task import Future
 import threading
 import socket
+import pickle
 
 from tf2_ros import Buffer, TransformListener
 from geometry_msgs.msg import TwistStamped
@@ -242,7 +243,7 @@ class IsaacSimWrapper(gym.Env):
     """
 
 
-    def __init__(self, server_host: str = "0.0.0.0", server_port: int = 6_000, im_size: int = 256):
+    def __init__(self, server_host: str = "172.18.0.1", server_port: int = 6_000, im_size: int = 256):
         super().__init__()
         self.server_address = (server_host, server_port)
         # self.host = server_host
@@ -300,11 +301,14 @@ class IsaacSimWrapper(gym.Env):
             
         gym_output = gym_output["policy"]
 
-        obs = gym_output["obs"]
+        gym_obs = gym_output["obs"]
         reward = gym_output["reward"]
         terminated = gym_output["terminated"]
         truncated = gym_output["truncated"]
         info = gym_output["info"]
+
+        obs = {"image_primary": gym_obs["vis_obs_wrist"]}
+        
 
         #TODO: Format the obs the 'octo' way
 
@@ -329,15 +333,16 @@ class IsaacSimWrapper(gym.Env):
             msg_len = int.from_bytes(header, "big")
             payload = self._recv_exactly(s, msg_len)
             print("got payload")
-            gym_output = json.loads(payload)
+            gym_output = pickle.loads(payload)
 
         # Policy key contains all the information that the policy network is permitted to see
-        gym_output = gym_output["policy"]
+        # gym_output = gym_output["policy"]
 
-        gym_obs = gym_output["obs"]
-        gym_info = gym_output["info"]
+        obs = gym_output["obs"]
+        info = gym_output["info"]
+        
 
-        obs = {"image_primary": gym_obs["vis_obs_wrist"]}
+        obs = {"image_primary": obs["vis_obs_wrist"]}
         print(F"Returning {obs, info}")
         
         

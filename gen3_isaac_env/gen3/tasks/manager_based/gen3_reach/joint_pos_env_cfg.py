@@ -33,6 +33,7 @@ from isaaclab_assets import KINOVA_GEN3_N7_CFG  # isort: skip
 class BasicCameraParams(CameraCfg):
     spawn = PinholeCameraCfg()
     data_types = ["rgb"]
+    normalize = False
     height = 256
     width = 256
 
@@ -60,7 +61,10 @@ class Gen3ReachEnvCfg(ReachEnvCfg):
         # Add visual information to the observation
         self.observations.policy.vis_obs_wrist = ObservationTermCfg(
             func=mdp.image,
-            params={"sensor_cfg": SceneEntityCfg(name="wrist_camera")}
+            params={
+                "sensor_cfg": SceneEntityCfg(name="wrist_camera"),
+                "normalize": False
+            }
         ) 
             
         self.observations.policy.concatenate_terms = False
