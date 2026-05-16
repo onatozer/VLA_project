@@ -108,13 +108,24 @@ try:
                     else:
                         buf = recv_exactly(conn, msg_len)
                         octo_action = pickle.loads(buf)
-                    # action = torch.frombuffer(buf, dtype=meta['dtype']).reshape(meta['shape'])
+
+                        octo_action = torch.from_numpy(octo_action)
+                        obs, reward, terminated, truncated, info = env.step(octo_action)
+                        
+                        output_obs = replace_tensors(obs["policy"])
+                        reward = replace_tensors(reward)
+                        terminated = replace_tensors(terminated)
+                        truncated = replace_tensors(truncated)
+                        info = replace_tensors(info)
+                        
+                        output_dict = {"obs": output_obs, "reward": reward, "terminated": terminated, "truncated": truncated, "info": info}
 
 
                     print(f"Sending output dict of {output_dict}")
                     payload = pickle.dumps(output_dict)
                     header = len(payload).to_bytes(4, 'big')
                     conn.sendall(header+payload)
+                    
 except Exception as e:
     print(e)
 

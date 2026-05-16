@@ -279,17 +279,19 @@ class IsaacSimWrapper(gym.Env):
             print("Socket initialized")
                 
             s.connect(self.server_address)
-            print("Acceptted connection")
+            print("Accepted connection")
             
-            # Jax has no native way to convert to bytes, so just convert to numpy first
-            buffer = np.array(action).tobytes()
+         
+            # Numpy is going to be the data type of exchange between the client and server
+            action = np.array(action)
             
             # First send header indicating the length of the action array
-            header = len(buffer).to_bytes(4, 'big')
+            header = len(action).to_bytes(4, 'big')
             s.sendall(header)
             
-            # Then send the actual buffer itself
-            s.sendall(buffer)
+            # Then send the actual action itself
+            action_buf = pickle.dumps(action)
+            s.sendall(action_buf)
             
             # Then recieve response from the server
             header = self._recv_exactly(s, 4)
@@ -297,9 +299,8 @@ class IsaacSimWrapper(gym.Env):
             msg_len = int.from_bytes(header, "big")
             payload = self._recv_exactly(s, msg_len)
             print("got payload")
-            gym_output = json.loads(payload)
+            gym_output = pickle.loads(payload)
             
-        gym_output = gym_output["policy"]
 
         gym_obs = gym_output["obs"]
         reward = gym_output["reward"]
@@ -309,9 +310,6 @@ class IsaacSimWrapper(gym.Env):
 
         obs = {"image_primary": gym_obs["vis_obs_wrist"]}
         
-
-        #TODO: Format the obs the 'octo' way
-
         return obs, reward, terminated, truncated, info
             
     def reset(self, seed, options):
