@@ -9,10 +9,11 @@ import threading
 import socket
 import pickle
 
+import jax.numpy as jnp
+
 from tf2_ros import Buffer, TransformListener
 from geometry_msgs.msg import TwistStamped
 from sensor_msgs.msg import Image
-
 
 class SnapshotQueue(Queue):
     """
@@ -236,14 +237,14 @@ class KinovaGymEnvironment(gym.Env):
         self.close()
         
 
-class IsaacSimWrapper(gym.Env):
+class IsaacSimGymEnvironment(gym.Env):
     """
         Class that basically acts as a wrapper over the socket commands that send the Octo actions to the actual IsaacSim environment
         setup in another docker container
     """
 
 
-    def __init__(self, server_host: str = "172.18.0.1", server_port: int = 6_000, im_size: int = 256):
+    def __init__(self, server_host: str = "172.18.0.1", server_port: int = 6_000, im_size: int = 128):
         super().__init__()
         self.server_address = (server_host, server_port)
         # self.host = server_host
@@ -251,7 +252,7 @@ class IsaacSimWrapper(gym.Env):
         
         # Same observation space as the Kinova Gym environment
         self.observation_space = gym.spaces.Dict({
-            "image_primary": gym.spaces.Box(
+            "image_wrist": gym.spaces.Box(
                 low=0,
                 high=255,
                 shape=(im_size, im_size , 3),
@@ -276,29 +277,25 @@ class IsaacSimWrapper(gym.Env):
     def step(self, action):
         
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            print("Socket initialized")
                 
             s.connect(self.server_address)
-            print("Accepted connection")
             
          
             # Numpy is going to be the data type of exchange between the client and server
             action = np.array(action)
+            action_buf = pickle.dumps(action)
             
             # First send header indicating the length of the action array
-            header = len(action).to_bytes(4, 'big')
+            header = len(action_buf).to_bytes(4, 'big')
             s.sendall(header)
             
             # Then send the actual action itself
-            action_buf = pickle.dumps(action)
             s.sendall(action_buf)
             
             # Then recieve response from the server
             header = self._recv_exactly(s, 4)
-            print("got header")
             msg_len = int.from_bytes(header, "big")
             payload = self._recv_exactly(s, msg_len)
-            print("got payload")
             gym_output = pickle.loads(payload)
             
 
@@ -308,18 +305,15 @@ class IsaacSimWrapper(gym.Env):
         truncated = gym_output["truncated"]
         info = gym_output["info"]
 
-        obs = {"image_primary": gym_obs["vis_obs_wrist"]}
+        obs = {"image_wrist": np.squeeze(gym_obs["vis_obs_wrist"])}
         
         return obs, reward, terminated, truncated, info
             
     def reset(self, seed, options):
         # Recieve response from the environment
-        print("Receiving from environment")
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            print("Socket initialized")
 
             s.connect(self.server_address)
-            print("Acceptted connection")
             
             # First send header of 0 to server to indicate a reset
             header = 0 .to_bytes(4, 'big')
@@ -327,10 +321,8 @@ class IsaacSimWrapper(gym.Env):
             
             # Then recieve response from the server
             header = self._recv_exactly(s, 4)
-            print("got header")
             msg_len = int.from_bytes(header, "big")
             payload = self._recv_exactly(s, msg_len)
-            print("got payload")
             gym_output = pickle.loads(payload)
 
         # Policy key contains all the information that the policy network is permitted to see
@@ -340,9 +332,7 @@ class IsaacSimWrapper(gym.Env):
         info = gym_output["info"]
         
 
-        obs = {"image_primary": obs["vis_obs_wrist"]}
-        print(F"Returning {obs, info}")
-        
+        obs = {"image_wrist": np.squeeze(obs["vis_obs_wrist"])}
         
         return obs, info
 

@@ -13,7 +13,7 @@ import pickle
 import isaaclab_tasks  # noqa: F401 — this registers all envs in the gym registry
 from isaaclab_tasks.utils import parse_env_cfg  
 import gen3.tasks
-
+import traceback
 
 import json
 
@@ -55,12 +55,9 @@ def recv_exactly(sock, n):
 
 # Helper function that replaces all the tensors in a dictionary with numpy arrays
 def replace_tensors(input_dict: dict):
-    print(f"Called func {input_dict}")
     output_dict = {}
     for key, val in input_dict.items():
-        print(key, val)
         if isinstance(val, dict):
-            print("Located dict")
             output_dict[key] = replace_tensors(val)
         
         elif torch.is_tensor(val):
@@ -99,7 +96,6 @@ try:
                         obs, info = env.reset()
                         
                         # Convert all the torch tensors into numpy arrays to allow the pickle library to steralize the object
-                        print(obs, info)
                         output_obs = replace_tensors(obs["policy"])
                         output_info = replace_tensors(info)
                         
@@ -108,26 +104,32 @@ try:
                     else:
                         buf = recv_exactly(conn, msg_len)
                         octo_action = pickle.loads(buf)
+                        
 
                         octo_action = torch.from_numpy(octo_action)
+                        # Isaac sim expects a batch dimension
+                        octo_action = octo_action.unsqueeze(0)
+                        
                         obs, reward, terminated, truncated, info = env.step(octo_action)
+
+                        # print(obs, reward, terminated, truncated, info)
                         
                         output_obs = replace_tensors(obs["policy"])
-                        reward = replace_tensors(reward)
-                        terminated = replace_tensors(terminated)
-                        truncated = replace_tensors(truncated)
+                        reward = reward.cpu().numpy()
+                        terminated = terminated.cpu().numpy()
+                        truncated = truncated.cpu().numpy()
                         info = replace_tensors(info)
                         
                         output_dict = {"obs": output_obs, "reward": reward, "terminated": terminated, "truncated": truncated, "info": info}
 
 
-                    print(f"Sending output dict of {output_dict}")
                     payload = pickle.dumps(output_dict)
                     header = len(payload).to_bytes(4, 'big')
                     conn.sendall(header+payload)
                     
 except Exception as e:
     print(e)
+    print(traceback.format_exc())
 
         
 env.close()

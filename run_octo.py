@@ -13,23 +13,44 @@ from geometry_msgs.msg import Twist
 # from ros2_octo.msg import OctoObservation, OctoAction
 
 from octo.model.octo_model import OctoModel
-from octo.utils.gym_wrappers import HistoryWrapper, TemporalEnsembleWrapper, RHCWrapper
+from octo.utils.gym_wrappers import HistoryWrapper, TemporalEnsembleWrapper, RHCWrapper, ResizeImageWrapper
 from octo.utils.train_callbacks import supply_rng
 
-from gym_environments import KinovaGymEnvironment, IsaacSimWrapper
+from gym_environments import KinovaGymEnvironment, IsaacSimGymEnvironment
 from functools import partial
 import jax
 import jax.numpy as jnp
 import tensorflow_datasets as tfds
 
+# create policy functions
+def sample_actions_isaac(
+    pretrained_model: OctoModel,
+    observations,
+    tasks,
+    rng,
+):
+    # add batch dim to observations
+    observations = jax.tree_map(lambda x: x[None], observations)
+
+    actions = pretrained_model.sample_actions(
+        observations,
+        tasks,
+        rng=rng,
+        unnormalization_statistics=pretrained_model.dataset_statistics[
+            "bridge_dataset"
+        ]["action"],
+    )
+    # remove batch dim
+    return actions[0]
+
 
 def main(args=None):
-    horizon = 1
+    horizon = 2
 
     # env = KinovaGymEnvironment()
-    env = IsaacSimWrapper()
+    env = IsaacSimGymEnvironment()
     env = HistoryWrapper(env, horizon)
-    env = RHCWrapper(env, 1)
+    env = RHCWrapper(env, 4)
     
     obs, info = env.reset()
     print("-"*10)
@@ -38,74 +59,40 @@ def main(args=None):
     print("-"*10)
     
     model = OctoModel.load_pretrained("hf://rail-berkeley/octo-small-1.5")
-    print(model.get_pretty_spec())
+    # print(model.get_pretty_spec())
     # print(model.dataset_statistics)
+    print(obs.values())
+
+    # for key,value in obs.items():
+    #     print(value.shape)
+    #     if key == "timestep_pad_mask":
+    #         continue
+
+    #     # Each of the numpy arrays is gonna be organized as (history_dim, batch, im_size, im_size, color), but we need batch dim fist
+    #     obs[key] = value.transpose(1,0,2,3,4)
     
-
-    # Dummy obs for right now, lifted straight from octo git
-    builder = tfds.builder_from_directory(builder_dir='gs://gresearch/robotics/bridge/0.1.0/')
-    ds = builder.as_dataset(split='train[:1]')
-
-    # sample episode + resize to 256x256 (default third-person cam resolution)
-    episode = next(iter(ds))
-    steps = list(episode['steps'])
-    images = [cv2.resize(np.array(step['observation']['image']), (256, 256)) for step in steps]
-
-    # extract goal image & language instruction
-    goal_image = images[-1]
-    language_instruction = steps[0]['observation']['natural_language_instruction'].numpy().decode()
-    task = model.create_tasks(texts=[language_instruction])                  # for language conditioned
+    print(obs.keys())
+    print(obs["image_wrist"].shape)
+    print(f"Num batches {next(iter(obs.values())).shape[0]}")
     
-
-    pred_actions, true_actions = [], []
-    WINDOW_SIZE = 2
-    for step in tqdm.trange(len(images) - (WINDOW_SIZE - 1)):
-        input_images = np.stack(images[step:step+WINDOW_SIZE])[None]
-        observation = {
-            'image_primary': input_images,
-            'timestep_pad_mask': np.full((1, input_images.shape[1]), True, dtype=bool)
-        }
-        
-        # this returns *normalized* actions --> we need to unnormalize using the dataset statistics
-        actions = model.sample_actions(
-            observation, 
-            task, 
-            unnormalization_statistics=model.dataset_statistics["bridge_dataset"]["action"], 
-            rng=jax.random.PRNGKey(0)
-        )
-        actions = actions[0] # remove batch dim
-
-    pred_actions.append(actions)
-    final_window_step = step + WINDOW_SIZE - 1
-    true_actions.append(np.concatenate(
-        (
-            steps[final_window_step]['action']['world_vector'], 
-            steps[final_window_step]['action']['rotation_delta'], 
-            np.array(steps[final_window_step]['action']['open_gripper']).astype(np.float32)[None]
-        ), axis=-1
-    ))
-
-    action = pred_actions[0]
-    print(action.shape)
-
-    env.step(action[0])
+    tasks = model.create_tasks(texts = ["Say hello"])
     
-    # policy_fn = supply_rng(
-    #     partial(
-    #         model.sample_actions, 
-    #         unnormalization_statistics = model.dataset_statistics[ "bridge_dataset" ]["action"])
-    #     )
+    policy_fn = supply_rng(
+        partial(
+            sample_actions_isaac,
+            model,
+        ),
+    )
 
-    # # Dummy obs/task just to make sure that the thing actually works
-    # goal_image = jnp.zeros((256, 256, 3), dtype=np.uint8)
-    # goal_instruction = "Move the block"
+    action = policy_fn(obs, tasks)
 
-    # task = model.create_tasks(texts=[goal_instruction])
+    obs, reward, terminated, truncated, info = env.step(action)
     
-    # # action = np.array(policy_fn(observation= goal_image, tasks= task, rng = jax.random.PRNGKey(0),), dtype=np.float64)
-    # actions = policy_fn(jax.tree_map(lambda x: x[None], obs), task)
-    # actions = actions[0]
-    # print(action, action.shape)
+    action = policy_fn(obs, tasks)
+    
+    obs, reward, terminated, truncated, info = env.step(action)
+    print("-"*20)
+    print("File ended")
 
 
     

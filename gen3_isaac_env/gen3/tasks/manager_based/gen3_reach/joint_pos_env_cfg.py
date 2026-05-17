@@ -44,8 +44,12 @@ class SceneCameraCfg(BasicCameraParams):
 
 @configclass
 class WristCameraCfg(BasicCameraParams):
-    # Here the camera's placed right on the robot's arm, which is the view Octo's most comfortable with. 
+    # Here the camera's placed right on the robot's arm
     prim_path = "{ENV_REGEX_NS}/Robot/end_effector_link/Camera"
+    
+    # The pre-trained octo policy has an image size for the wrist images hard-coded to 128
+    height = 128
+    width = 128 
 
 
 
