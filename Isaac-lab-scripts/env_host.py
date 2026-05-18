@@ -1,7 +1,7 @@
 from isaaclab.app import AppLauncher
 
 # launch omniverse app (has to be running before the other imports)
-app_launcher = AppLauncher(headless=True, enable_cameras = True)
+app_launcher = AppLauncher(headless=True, enable_cameras = True, Livestream = 2) # Livestream 2 opens a gui view 
 simulation_app = app_launcher.app
 
 
@@ -21,20 +21,35 @@ import json
 with open("env_config.json", "r") as file:
     configs = json.load(file)
 
-#Task name needs to be passed into botht he parse_env_cfg function and gym.make function
+#Task name needs to be passed into both the parse_env_cfg function and gym.make function
 task_name = "Gen3-Reach-v0"
 
 env_cfg = parse_env_cfg(**configs)
 
-env = gym.make(task_name, cfg=env_cfg)
-# print(gym.observation_space)
+env_cfg.viewer.resolution = (640, 480)
+env_cfg.viewer.eye = (2.0, 2.0, 2.0)      # Camera position
+env_cfg.viewer.lookat = (0.0, 0.0, 0.5)   # Look-at point
+
+
+env = gym.make(task_name, cfg=env_cfg, render_mode = "rgb_array")
+
+
+video_kwargs = {
+    "video_folder": "./video_recordings",
+    "episode_trigger": lambda ep: ep % 1 == 0,
+    "video_length": 10_000,
+    # "fps": 30,
+    # "disable_logger": True,
+}
+
+env = gym.wrappers.RecordVideo(env, **video_kwargs)
+
 obs, info = env.reset()
 # print(output_dict)
 
 
 # Port value for isaac sim container is hard-coded to 6,000 and octo container 5,000. There's probably a better practice, but for this case its fine
 ISAACSIM_PORT = 6_000
-OCTO_PORT = 5_000
 
 HOST = "0.0.0.0"
 
@@ -89,7 +104,11 @@ try:
                     # and sending back the environment observation to it
                     
                     header = recv_exactly(conn,4)
-                    msg_len = int.from_bytes(header, 'big')
+                    msg_len = int.from_bytes(header, byteorder = 'big', signed = True)
+
+                    if msg_len == -1:
+                        raise Exception("Manual break called")
+                        break
 
                     # We're gonna interperent msg_len of 0 as a reset call, because if no action is set, all that's to be done is to reset the environment
                     if msg_len == 0:
