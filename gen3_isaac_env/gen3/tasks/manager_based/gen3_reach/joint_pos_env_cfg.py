@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 import math
+import numpy as np
 
 from isaaclab.utils import configclass
 
@@ -12,13 +13,16 @@ from isaaclab_tasks.manager_based.manipulation.reach.reach_env_cfg import ReachE
 from isaaclab.managers import ObservationTermCfg, SceneEntityCfg
 from isaaclab.sensors import CameraCfg
 from isaaclab.sim.spawners.sensors import PinholeCameraCfg
+from isaaclab.assets import RigidObjectCfg, RigidObject
+from isaaclab.managers import TerminationTermCfg as DoneTerm
+import isaaclab.sim as sim_utils
+from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR
 
 ##
 # Pre-defined configs
 ##
 #TODO: We have 6-dof arm, so this likely has to change
 from isaaclab_assets import KINOVA_GEN3_N7_CFG  # isort: skip
-
 
 
 
@@ -51,6 +55,19 @@ class WristCameraCfg(BasicCameraParams):
     height = 128
     width = 128 
 
+@configclass 
+class CubeCfg(RigidObjectCfg):
+    prim_path="{ENV_REGEX_NS}/Cube"
+    init_state=RigidObjectCfg.InitialStateCfg()
+    
+    spawn=sim_utils.CuboidCfg(
+        size = [.1,.1,.1],
+        visible = True,
+        rigid_props=sim_utils.RigidBodyPropertiesCfg(),
+        mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
+        collision_props=sim_utils.CollisionPropertiesCfg(),
+        visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(52, 21, 57), metallic=0.2),
+    )
 
 
 @configclass
@@ -70,7 +87,21 @@ class Gen3ReachEnvCfg(ReachEnvCfg):
                 "normalize": False
             }
         ) 
-            
+        
+
+        self.scene.cube = CubeCfg()
+
+        # Set the starting position of the cube config to be somewhere random on the surface of the table
+        table_pos = np.array(self.scene.table.init_state.pos)
+        starting_pos = np.random.rand(3) * .4 # .4 is about as close to the edge of the table as you can get
+        starting_pos[2] = 0 
+
+        table_pos = tuple(table_pos + starting_pos)
+
+        self.scene.cube.init_state = RigidObjectCfg.InitialStateCfg(pos = table_pos)
+
+        
+        # Necessary because image obs won't combine properly with the joint position obs
         self.observations.policy.concatenate_terms = False
 
         # switch robot to ur10
@@ -93,3 +124,36 @@ class Gen3ReachEnvCfg(ReachEnvCfg):
         # end-effector is along x-direction
         self.commands.ee_pose.body_name = "end_effector_link"
         self.commands.ee_pose.ranges.pitch = (math.pi / 2, math.pi / 2)
+
+
+@configclass
+class Gen3FindObjCfg(Gen3ReachEnvCfg):
+
+
+
+
+    def __post_init__(self):
+        super().__post_init__()
+
+        # cfg = sim_utils.UsdFileCfg(usd_path=f"{ISAACLAB_NUCLEUS_DIR}/Robots/FrankaEmika/panda_instanceable.usd")
+        # prim_path = "{ENV_REGEX_NS}/World/Table/Asset"
+
+        # # use the `func` reference in the config class
+        # cfg.func(prim_path, cfg)
+        
+        cube_cfg = RigidObjectCfg(
+            prim_path="{ENV_REGEX_NS}/",
+            spawn=sim_utils.CuboidCfg(
+                        size = [.1,.1,.1],
+                        visible = True,
+                        rigid_props=sim_utils.RigidBodyPropertiesCfg(),
+                        mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
+                        collision_props=sim_utils.CollisionPropertiesCfg(),
+                        visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.0, 1.0, 0.0), metallic=0.2
+                    ),
+                    init_state=RigidObjectCfg.InitialStateCfg(),
+                    ),
+            )
+
+        self.scene.cube = RigidObject(cfg=cone_cfg)
+
