@@ -1,6 +1,8 @@
 logs
 octo
 ros2_ws
+Isaac-lab-scripts/video_recordings
+Isaac-lab-scripts/video_recordings_octo
 .swp
 
 # Byte-compiled / optimized / DLL files

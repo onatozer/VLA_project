@@ -8,6 +8,7 @@ from rclpy.task import Future
 import threading
 import socket
 import pickle
+import imageio
 
 import jax.numpy as jnp
 
@@ -244,21 +245,33 @@ class IsaacSimGymEnvironment(gym.Env):
     """
 
 
-    def __init__(self, server_host: str = "172.18.0.1", server_port: int = 6_000, im_size: int = 128):
+    def __init__(self, server_host: str = "172.18.0.1", server_port: int = 6_000, record_obs: bool = False):
         super().__init__()
         self.server_address = (server_host, server_port)
-        # self.host = server_host
-        # self.isaac_sim_port = server_port
         
         # Same observation space as the Kinova Gym environment
         self.observation_space = gym.spaces.Dict({
+            "image_primary": gym.spaces.Box(
+                low=0,
+                high=255,
+                shape=(256, 256, 3),
+                dtype=np.uint8,
+            ),
             "image_wrist": gym.spaces.Box(
                 low=0,
                 high=255,
-                shape=(im_size, im_size , 3),
+                shape=(128, 128, 3),
                 dtype=np.uint8,
             ),
         })
+        
+        # NOTE: Hard-coded path here not ideal, but this is primarily for debugging, and also no obvious reason directory structure would change
+        if record_obs:
+            self.primary_stream_writer = imageio.get_writer("Isaac-lab-scripts/video_recordings_octo/octo_primary.mp4", fps=30, codec="libx264")
+            self.wrist_stream_writer = imageio.get_writer("Isaac-lab-scripts/video_recordings_octo/octo_wrist.mp4", fps=30, codec="libx264")
+        else:
+            self.primary_stream_writer = None
+            self.wrist_stream_writer = None
         
 
     def _recv_exactly(self, sock, n):
@@ -305,7 +318,15 @@ class IsaacSimGymEnvironment(gym.Env):
         truncated = gym_output["truncated"]
         info = gym_output["info"]
 
-        obs = {"image_wrist": np.squeeze(gym_obs["vis_obs_wrist"])}
+        # We remove the batch dimension from each obs so that octo wrappers don't break
+        obs = {"image_primary": np.squeeze(gym_obs["vis_obs_primary"]), "image_wrist": np.squeeze(gym_obs["vis_obs_wrist"])}
+
+        if self.primary_stream_writer is not None:
+            self.primary_stream_writer.append_data(obs["image_primary"])
+
+        if self.wrist_stream_writer is not None:
+            self.wrist_stream_writer.append_data(obs["image_wrist"])
+
         
         return obs, reward, terminated, truncated, info
             
@@ -330,10 +351,18 @@ class IsaacSimGymEnvironment(gym.Env):
 
         obs = gym_output["obs"]
         info = gym_output["info"]
+
+        obs = {"image_primary": np.squeeze(obs["vis_obs_primary"]), "image_wrist": np.squeeze(obs["vis_obs_wrist"])}
+        
+        if self.primary_stream_writer is not None:
+            self.primary_stream_writer.close()
+            self.primary_stream_writer = imageio.get_writer("Isaac-lab-scripts/video_recordings_octo/octo_primary.mp4", fps=30, codec="libx264")
+
+        if self.wrist_stream_writer is not None:
+            self.wrist_stream_writer.close()
+            self.wrist_stream_writer = imageio.get_writer("Isaac-lab-scripts/video_recordings_octo/octo_wrist.mp4", fps=30, codec="libx264")
         
 
-        obs = {"image_wrist": np.squeeze(obs["vis_obs_wrist"])}
-        
         return obs, info
 
 

@@ -37,7 +37,6 @@ from isaaclab_assets import KINOVA_GEN3_N7_CFG  # isort: skip
 class BasicCameraParams(CameraCfg):
     spawn = PinholeCameraCfg()
     data_types = ["rgb"]
-    normalize = False
     height = 256
     width = 256
 
@@ -66,7 +65,7 @@ class CubeCfg(RigidObjectCfg):
         rigid_props=sim_utils.RigidBodyPropertiesCfg(),
         mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
         collision_props=sim_utils.CollisionPropertiesCfg(),
-        visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(52, 21, 57), metallic=0.2),
+        visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(157/255,0.0,1.0), metallic=0.2),
     )
 
 
@@ -76,7 +75,8 @@ class Gen3ReachEnvCfg(ReachEnvCfg):
         # post init of parent
         super().__post_init__()
 
-        # Add camera to the scene that can actually capture visual observations
+        # Add cameras to the scene that can actually capture visual observations
+        self.scene.primary_camera = SceneCameraCfg()
         self.scene.wrist_camera = WristCameraCfg()
 
         # Add visual information to the observation
@@ -88,10 +88,18 @@ class Gen3ReachEnvCfg(ReachEnvCfg):
             }
         ) 
         
+        self.observations.policy.vis_obs_primary = ObservationTermCfg(
+            func=mdp.image,
+            params={
+                "sensor_cfg": SceneEntityCfg(name="primary_camera"),
+                "normalize": False
+            }
+        ) 
+        
 
         self.scene.cube = CubeCfg()
 
-        # Set the starting position of the cube config to be somewhere random on the surface of the table
+        # Set the starting position of the cube to be somewhere random on the surface of the table
         table_pos = np.array(self.scene.table.init_state.pos)
         starting_pos = np.random.rand(3) * .4 # .4 is about as close to the edge of the table as you can get
         starting_pos[2] = 0 
