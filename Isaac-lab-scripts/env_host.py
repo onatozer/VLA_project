@@ -19,18 +19,15 @@ import json
 
 import isaaclab.sim as sim_utils
 
-# Probably overkill to be doing this, but leaving it for now
-with open("env_config.json", "r") as file:
-    configs = json.load(file)
 
 #Task name needs to be passed into both the parse_env_cfg function and gym.make function
 task_name = "Gen3-Reach-v0"
 
-env_cfg = parse_env_cfg(**configs)
+env_cfg = parse_env_cfg(task_name = task_name, num_envs = 1)
 
-env_cfg.viewer.resolution = (640, 480)
-env_cfg.viewer.eye = (2.0, 2.0, 2.0)      # Camera position
-env_cfg.viewer.lookat = (0.0, 0.0, 0.5)   # Look-at point
+# env_cfg.viewer.resolution = (640, 480)
+# env_cfg.viewer.eye = (2.0, 2.0, 2.0)      # Camera position
+# env_cfg.viewer.lookat = (0.0, 0.0, 0.5)   # Look-at point
 
 
 env = gym.make(task_name, cfg=env_cfg, render_mode = "rgb_array")

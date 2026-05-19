@@ -5,13 +5,13 @@ from rclpy.node import Node
 import cv2
 import tqdm
 import socket
+import random
 
 from builtin_interfaces.msg import Duration
 from control_msgs.msg import JointTrajectoryControllerState
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from geometry_msgs.msg import Twist
 
-# from ros2_octo.msg import OctoObservation, OctoAction
 
 from octo.model.octo_model import OctoModel
 from octo.utils.gym_wrappers import HistoryWrapper, TemporalEnsembleWrapper, RHCWrapper, ResizeImageWrapper
@@ -48,7 +48,7 @@ def main(args=None):
     horizon = 2
 
     # env = KinovaGymEnvironment()
-    env = IsaacSimGymEnvironment()
+    env = IsaacSimGymEnvironment(record_obs = True)
     env = HistoryWrapper(env, horizon)
     env = RHCWrapper(env, 4)
     
@@ -59,7 +59,7 @@ def main(args=None):
     print("-"*10)
     
     model = OctoModel.load_pretrained("hf://rail-berkeley/octo-small-1.5")
-    tasks = model.create_tasks(texts = ["Say hello"])
+    tasks = model.create_tasks(texts = ["Move your gripper towards the purple cube"])
     
     policy_fn = supply_rng(
         partial(
@@ -72,23 +72,23 @@ def main(args=None):
     obs, reward, terminated, truncated, info = env.step(action)
     
     while(not terminated and not truncated):
-        print(action)
         if truncated:
             print("To long :-( ")
         obs, reward, terminated, truncated, info = env.step(action)
         action = policy_fn(obs, tasks)
+        # action = [random.random() for i in range(7)]
 
-
+    env.reset()
         
     print("-"*20)
     print("File ended")
     
     # Send signal to server for it to peacefully stop
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    # with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
 
-        s.connect(("172.18.0.1", 6_000))
-        break_msg = (-1).to_bytes(4, byteorder = "big", signed = True)
-        s.sendall(break_msg)
+    #     s.connect(("172.18.0.1", 6_000))
+    #     break_msg = (-1).to_bytes(4, byteorder = "big", signed = True)
+    #     s.sendall(break_msg)
 
 
     

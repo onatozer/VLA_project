@@ -44,15 +44,26 @@ class BasicCameraParams(CameraCfg):
 class SceneCameraCfg(BasicCameraParams):
     # Here the camera's placed right at the environment, making it the 'outside' view
     prim_path = "{ENV_REGEX_NS}/Camera"
+    offset = CameraCfg.OffsetCfg(
+        pos=(0.5, 0.0, 1.5),      # Above the table/robot
+        rot=(0.707, 0.0, 0.707, 0.0),  # +90° around Y: +X → −Z (down)
+        convention="world",
+    )
 
 @configclass
 class WristCameraCfg(BasicCameraParams):
     # Here the camera's placed right on the robot's arm
+    # prim_path = "{ENV_REGEX_NS}/Robot/bracelet_link/Camera"
     prim_path = "{ENV_REGEX_NS}/Robot/end_effector_link/Camera"
     
     # The pre-trained octo policy has an image size for the wrist images hard-coded to 128
     height = 128
     width = 128 
+    offset = CameraCfg.OffsetCfg(
+        pos=(0.10, 0.0, 0.05),         # 20 cm out to clear the wrist mesh
+        rot = (1.0, 0.0, 0.0, 0.0),
+        convention="ros",              # Use "ros" if the link frame is URDF/ROS standard
+    )
 
 @configclass 
 class CubeCfg(RigidObjectCfg):
