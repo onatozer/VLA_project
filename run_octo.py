@@ -4,6 +4,7 @@ import rclpy
 from rclpy.node import Node
 import cv2
 import tqdm
+import socket
 
 from builtin_interfaces.msg import Duration
 from control_msgs.msg import JointTrajectoryControllerState
@@ -27,8 +28,7 @@ def sample_actions_isaac(
     pretrained_model: OctoModel,
     observations,
     tasks,
-    rng,
-):
+    rng):
     # add batch dim to observations
     observations = jax.tree_map(lambda x: x[None], observations)
 
@@ -59,22 +59,6 @@ def main(args=None):
     print("-"*10)
     
     model = OctoModel.load_pretrained("hf://rail-berkeley/octo-small-1.5")
-    # print(model.get_pretty_spec())
-    # print(model.dataset_statistics)
-    print(obs.values())
-
-    # for key,value in obs.items():
-    #     print(value.shape)
-    #     if key == "timestep_pad_mask":
-    #         continue
-
-    #     # Each of the numpy arrays is gonna be organized as (history_dim, batch, im_size, im_size, color), but we need batch dim fist
-    #     obs[key] = value.transpose(1,0,2,3,4)
-    
-    print(obs.keys())
-    print(obs["image_wrist"].shape)
-    print(f"Num batches {next(iter(obs.values())).shape[0]}")
-    
     tasks = model.create_tasks(texts = ["Say hello"])
     
     policy_fn = supply_rng(
@@ -85,14 +69,26 @@ def main(args=None):
     )
 
     action = policy_fn(obs, tasks)
+    obs, reward, terminated, truncated, info = env.step(action)
+    
+    while(not terminated and not truncated):
+        print(action)
+        if truncated:
+            print("To long :-( ")
+        obs, reward, terminated, truncated, info = env.step(action)
+        action = policy_fn(obs, tasks)
 
-    obs, reward, terminated, truncated, info = env.step(action)
-    
-    action = policy_fn(obs, tasks)
-    
-    obs, reward, terminated, truncated, info = env.step(action)
+
+        
     print("-"*20)
     print("File ended")
+    
+    # Send signal to server for it to peacefully stop
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+
+        s.connect(("172.18.0.1", 6_000))
+        break_msg = (-1).to_bytes(4, byteorder = "big", signed = True)
+        s.sendall(break_msg)
 
 
     

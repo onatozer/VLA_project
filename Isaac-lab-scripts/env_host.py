@@ -17,6 +17,8 @@ import traceback
 
 import json
 
+import isaaclab.sim as sim_utils
+
 # Probably overkill to be doing this, but leaving it for now
 with open("env_config.json", "r") as file:
     configs = json.load(file)
@@ -33,12 +35,14 @@ env_cfg.viewer.lookat = (0.0, 0.0, 0.5)   # Look-at point
 
 env = gym.make(task_name, cfg=env_cfg, render_mode = "rgb_array")
 
+print(sim_utils.queries.get_all_matching_child_prims("/"))
+
 
 video_kwargs = {
     "video_folder": "./video_recordings",
     "episode_trigger": lambda ep: ep % 1 == 0,
     "video_length": 10_000,
-    # "fps": 30,
+    "name_prefix": task_name,
     # "disable_logger": True,
 }
 
@@ -98,6 +102,7 @@ try:
             while(True):
                 conn, addr = s.accept()
                 print("Accepted connection")
+                octo_action = -1
 
                 with conn:
                     # The pattern for interacting with the Octo policy is going to be just repeatingly recieving the data it sends,
