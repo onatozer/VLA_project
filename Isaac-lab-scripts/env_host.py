@@ -18,7 +18,7 @@ import traceback
 import json
 
 import isaaclab.sim as sim_utils
-
+from isaaclab.utils.math import quat_apply, quat_mul, quat_conjugate
 
 #Task name needs to be passed into both the parse_env_cfg function and gym.make function
 task_name = "Gen3-Reach-v0"
@@ -131,7 +131,24 @@ try:
                         # Isaac sim expects a batch dimension
                         octo_action = octo_action.unsqueeze(0)
                         
-                        obs, reward, terminated, truncated, info = env.step(octo_action)
+                        # Get robot asset
+                        robot = env.unwrapped.scene["robot"]
+                        body_names = robot.data.body_names
+                        ee_body_idx = body_names.index("end_effector_link")
+
+                        # Current orientations
+                        root_quat_w = robot.data.root_quat_w.squeeze(0)          # base in world
+                        ee_quat_w = robot.data.body_quat_w[:, ee_body_idx].squeeze(0)  # EE in world
+
+                        # EE orientation relative to base: q_b = q_root_w⁻¹ ⊗ q_ee_w
+                        ee_quat_b = quat_mul(quat_conjugate(root_quat_w), ee_quat_w)
+
+                        # Octo action: delta in EE local frame
+                        delta_pos_ee = torch.tensor(octo_action[:3], device=ee_quat_b.device)
+                        # Rotate to base frame
+                        delta_pos_base = quat_apply(ee_quat_b, delta_pos_ee)  
+
+                        obs, reward, terminated, truncated, info = env.step(delta_pos_base)
 
                         # print(obs, reward, terminated, truncated, info)
                         

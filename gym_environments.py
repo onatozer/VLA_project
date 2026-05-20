@@ -16,6 +16,13 @@ from tf2_ros import Buffer, TransformListener
 from geometry_msgs.msg import TwistStamped
 from sensor_msgs.msg import Image
 
+import logging
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(filename='octo_actions.log', encoding='utf-8', level=logging.INFO)
+logger.setLevel("DEBUG") # Set to lowest level so all levels are allowed
+
+
 class SnapshotQueue(Queue):
     """
     Helper class that allows us to view the current queue in a thread-safe manner, as suggeted by 
@@ -296,8 +303,9 @@ class IsaacSimGymEnvironment(gym.Env):
          
             # Numpy is going to be the data type of exchange between the client and server
             action = np.array(action)
-            action_buf = pickle.dumps(action)
-            
+            logger.info(f"Octo action of {action}")
+            action_buf = pickle.dumps(action[:3]) # Not sending grip bool atm
+
             # First send header indicating the length of the action array
             header = len(action_buf).to_bytes(4, 'big')
             s.sendall(header)

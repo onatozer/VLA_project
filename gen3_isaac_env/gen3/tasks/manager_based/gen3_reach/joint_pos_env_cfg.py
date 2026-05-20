@@ -17,6 +17,8 @@ from isaaclab.assets import RigidObjectCfg, RigidObject
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 import isaaclab.sim as sim_utils
 from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR
+from isaaclab.envs.mdp.actions.actions_cfg import DifferentialInverseKinematicsActionCfg, OperationalSpaceControllerActionCfg
+from isaaclab.controllers import DifferentialIKControllerCfg, OperationalSpaceControllerCfg
 
 ##
 # Pre-defined configs
@@ -134,15 +136,40 @@ class Gen3ReachEnvCfg(ReachEnvCfg):
         self.rewards.end_effector_position_tracking_fine_grained.params["asset_cfg"].body_names = ["end_effector_link"]
         self.rewards.end_effector_orientation_tracking.params["asset_cfg"].body_names = ["end_effector_link"]
 
-        # override actions
-        self.actions.arm_action = mdp.JointPositionActionCfg(
-            asset_name="robot", joint_names=[".*"], scale=0.5, use_default_offset=True
+
+        # # Replace the actions so that they're EEF delta controlled 
+        # self.actions.arm_action = DifferentialInverseKinematicsActionCfg(
+        #     asset_name="robot",
+        #     joint_names=[".*"], 
+        #     body_name="end_effector_link",
+        #     scale=0.1, 
+        #     controller=DifferentialIKControllerCfg(
+        #         command_type="pose",           
+        #         use_relative_mode=True,       
+        #         ik_method="pinv",               # damped least-squares; alternatives: "pinv", "svd", "trans"
+        #     ),
+        # )
+        # Just to remove the effect of the pose
+        self.actions.arm_action = DifferentialInverseKinematicsActionCfg(
+            asset_name="robot",
+            joint_names=[".*"], 
+            body_name="end_effector_link",
+            controller=DifferentialIKControllerCfg(
+                command_type="position",           
+                use_relative_mode=True,       
+                ik_method="dls",               # damped least-squares; alternatives: "pinv", "svd", "trans"
+            ),
         )
+        
+        
 
         # override command generator body
         # end-effector is along x-direction
         self.commands.ee_pose.body_name = "end_effector_link"
         self.commands.ee_pose.ranges.pitch = (math.pi / 2, math.pi / 2)
+
+        # So I don't wait an eternity for debugging
+        self.episode_length_s = 5
 
 
 @configclass
