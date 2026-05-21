@@ -19,6 +19,12 @@ import json
 
 import isaaclab.sim as sim_utils
 from isaaclab.utils.math import quat_apply, quat_mul, quat_conjugate
+import logging
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(filename='isaac_sim.log', encoding='utf-8', level=logging.INFO)
+logger.setLevel("INFO") # Set to lowest level so all levels are allowed
+
 
 #Task name needs to be passed into both the parse_env_cfg function and gym.make function
 task_name = "Gen3-Reach-v0"
@@ -126,29 +132,27 @@ try:
                         buf = recv_exactly(conn, msg_len)
                         octo_action = pickle.loads(buf)
                         
-
-                        octo_action = torch.from_numpy(octo_action)
-                        # Isaac sim expects a batch dimension
-                        octo_action = octo_action.unsqueeze(0)
+                        octo_action = torch.from_numpy(octo_action).float().to("cuda")
                         
                         # Get robot asset
                         robot = env.unwrapped.scene["robot"]
                         body_names = robot.data.body_names
                         ee_body_idx = body_names.index("end_effector_link")
 
-                        # Current orientations
-                        root_quat_w = robot.data.root_quat_w.squeeze(0)          # base in world
-                        ee_quat_w = robot.data.body_quat_w[:, ee_body_idx].squeeze(0)  # EE in world
+                        ee_quat_w = robot.data.body_quat_w[:, ee_body_idx].squeeze(0).float()  # EE orientation in world
+                        root_quat_w = robot.data.root_quat_w.squeeze(0)                   # base orientation in world
 
-                        # EE orientation relative to base: q_b = q_root_w⁻¹ ⊗ q_ee_w
-                        ee_quat_b = quat_mul(quat_conjugate(root_quat_w), ee_quat_w)
+                        delta_pos_world = quat_apply(ee_quat_w, octo_action[:3])                      # step 1: EE → world
+                        # delta_pos_base  = quat_apply(quat_conjugate(root_quat_w), delta_pos_world) # step 2: world → base
 
-                        # Octo action: delta in EE local frame
-                        delta_pos_ee = torch.tensor(octo_action[:3], device=ee_quat_b.device)
-                        # Rotate to base frame
-                        delta_pos_base = quat_apply(ee_quat_b, delta_pos_ee)  
-
-                        obs, reward, terminated, truncated, info = env.step(delta_pos_base)
+                        logger.info(f"action sent:     {octo_action}")
+                        logger.info(f"delta_pos_world: {delta_pos_world}")
+                        
+                        octo_action[0:3] = delta_pos_world
+                        
+                        # Isaac sim expects a batch dimension
+                        octo_action = octo_action.unsqueeze(0)
+                        obs, reward, terminated, truncated, info = env.step(octo_action)
 
                         # print(obs, reward, terminated, truncated, info)
                         

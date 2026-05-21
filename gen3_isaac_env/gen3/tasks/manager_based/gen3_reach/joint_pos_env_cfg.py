@@ -47,24 +47,24 @@ class SceneCameraCfg(BasicCameraParams):
     # Here the camera's placed right at the environment, making it the 'outside' view
     prim_path = "{ENV_REGEX_NS}/Camera"
     offset = CameraCfg.OffsetCfg(
-        pos=(0.5, 0.0, 1.5),      # Above the table/robot
-        rot=(0.707, 0.0, 0.707, 0.0),  # +90° around Y: +X → −Z (down)
+        pos=(-0.3, -0.15, 1.2),      # Above the table/robot
+        # rot=(0.707, 0.0, 0.707, 0.0),  # +90° around Y: +X → −Z (down)
+        rot = (0.906, 0.000, 0.423, 0.000),
         convention="world",
     )
 
 @configclass
 class WristCameraCfg(BasicCameraParams):
     # Here the camera's placed right on the robot's arm
-    # prim_path = "{ENV_REGEX_NS}/Robot/bracelet_link/Camera"
     prim_path = "{ENV_REGEX_NS}/Robot/end_effector_link/Camera"
     
     # The pre-trained octo policy has an image size for the wrist images hard-coded to 128
     height = 128
     width = 128 
     offset = CameraCfg.OffsetCfg(
-        pos=(0.10, 0.0, 0.05),         # 20 cm out to clear the wrist mesh
+        pos=(0.10, 0.0, 0.05),         
         rot = (1.0, 0.0, 0.0, 0.0),
-        convention="ros",              # Use "ros" if the link frame is URDF/ROS standard
+        convention="ros",             
     )
 
 @configclass 
@@ -113,13 +113,13 @@ class Gen3ReachEnvCfg(ReachEnvCfg):
         self.scene.cube = CubeCfg()
 
         # Set the starting position of the cube to be somewhere random on the surface of the table
-        table_pos = np.array(self.scene.table.init_state.pos)
+        table_surface = np.array(self.scene.table.init_state.pos)
         starting_pos = np.random.rand(3) * .4 # .4 is about as close to the edge of the table as you can get
         starting_pos[2] = 0 
 
-        table_pos = tuple(table_pos + starting_pos)
+        starting_pos = tuple(table_surface + starting_pos)
 
-        self.scene.cube.init_state = RigidObjectCfg.InitialStateCfg(pos = table_pos)
+        self.scene.cube.init_state = RigidObjectCfg.InitialStateCfg(pos = starting_pos)
 
         
         # Necessary because image obs won't combine properly with the joint position obs
@@ -155,7 +155,7 @@ class Gen3ReachEnvCfg(ReachEnvCfg):
             joint_names=[".*"], 
             body_name="end_effector_link",
             controller=DifferentialIKControllerCfg(
-                command_type="position",           
+                command_type="pose",           
                 use_relative_mode=True,       
                 ik_method="dls",               # damped least-squares; alternatives: "pinv", "svd", "trans"
             ),

@@ -302,9 +302,9 @@ class IsaacSimGymEnvironment(gym.Env):
             
          
             # Numpy is going to be the data type of exchange between the client and server
-            action = np.array(action)
+            action = np.array(action[0:6]) # removing the gripper dimension TODO: Figre out how to actually grip in the sim
             logger.info(f"Octo action of {action}")
-            action_buf = pickle.dumps(action[:3]) # Not sending grip bool atm
+            action_buf = pickle.dumps(action) 
 
             # First send header indicating the length of the action array
             header = len(action_buf).to_bytes(4, 'big')
