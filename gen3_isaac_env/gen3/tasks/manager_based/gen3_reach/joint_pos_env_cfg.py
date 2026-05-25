@@ -196,7 +196,7 @@ class Gen3ReachEnvCfg(ReachEnvCfg):
                 command_type="pose",           
                 use_relative_mode=True,       
                 ik_method="dls",               # damped least-squares; alternatives: "pinv", "svd", "trans"
-                ik_params = {"lambda_val": .005}
+                ik_params = {"lambda_val": .2}
             ),
         )
         

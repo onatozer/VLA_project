@@ -36,9 +36,6 @@ def sample_actions_isaac(
         observations,
         tasks,
         rng=rng,
-        unnormalization_statistics=pretrained_model.dataset_statistics[
-            "bridge_dataset"
-        ]["action"],
     )
     # remove batch dim
     return actions[0]
@@ -59,7 +56,7 @@ def main(args=None):
     print("-"*10)
     
     model = OctoModel.load_pretrained("hf://rail-berkeley/octo-small-1.5")
-    tasks = model.create_tasks(texts = ["Move your gripper towards the purple cube"])
+    tasks = model.create_tasks(texts = ["Pick up the purple cube"])
     
     policy_fn = supply_rng(
         partial(
@@ -69,6 +66,7 @@ def main(args=None):
     )
 
     action = policy_fn(obs, tasks)
+    action = action * model.dataset_statistics["bridge_dataset"]["action"]["std"][None] + model.dataset_statistics["bridge_dataset"]["action"]["mean"][None]
     obs, reward, terminated, truncated, info = env.step(action)
     
     while(not terminated and not truncated):
