@@ -11,13 +11,14 @@ from isaaclab.utils import configclass
 import isaaclab_tasks.manager_based.manipulation.reach.mdp as mdp
 from isaaclab_tasks.manager_based.manipulation.reach.reach_env_cfg import ReachEnvCfg
 from isaaclab.managers import ObservationTermCfg, SceneEntityCfg
+from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.sensors import CameraCfg
 from isaaclab.sim.spawners.sensors import PinholeCameraCfg
 from isaaclab.assets import RigidObjectCfg, RigidObject
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 import isaaclab.sim as sim_utils
 from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR
-from isaaclab.envs.mdp.actions.actions_cfg import DifferentialInverseKinematicsActionCfg, OperationalSpaceControllerActionCfg
+from isaaclab.envs.mdp.actions.actions_cfg import DifferentialInverseKinematicsActionCfg, OperationalSpaceControllerActionCfg, BinaryJointPositionActionCfg
 from isaaclab.controllers import DifferentialIKControllerCfg, OperationalSpaceControllerCfg
 from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets.articulation import ArticulationCfg
@@ -69,18 +70,47 @@ class WristCameraCfg(BasicCameraParams):
         convention="ros",             
     )
 
-@configclass 
+CUBE_SIZE = 0.1
+
+@configclass
 class CubeCfg(RigidObjectCfg):
     prim_path="{ENV_REGEX_NS}/Cube"
     init_state=RigidObjectCfg.InitialStateCfg()
-    
+
     spawn=sim_utils.CuboidCfg(
-        size = [.1,.1,.1],
+        size = [CUBE_SIZE, CUBE_SIZE, CUBE_SIZE],
         visible = True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(),
         mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
         collision_props=sim_utils.CollisionPropertiesCfg(),
         visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(157/255,0.0,1.0), metallic=0.2),
+    )
+
+
+def add_cube_to_scene(cfg: ReachEnvCfg, spread: float, cube_cfg: RigidObjectCfg | None = None):
+    """
+    Add a cube to the scene whose position is re-sampled on EVERY reset, uniformly within `spread` meters of the
+    table origin in x and y. The cube rests on the table surface (center is half a cube-height above the table).
+
+    Previously the position was sampled with np.random inside __post_init__, i.e. once when the config was built,
+    so every episode placed the cube in exactly the same spot.
+    """
+    cfg.scene.cube = cube_cfg if cube_cfg is not None else CubeCfg()
+
+    # x/y from the table prim; z from the robot mounting plane (z = 0 is the tabletop the robot base sits on, in every
+    # Isaac Lab version of the reach env, whereas the table prim's own origin moved between versions).
+    table_x, table_y, _ = cfg.scene.table.init_state.pos
+    cfg.scene.cube.init_state = RigidObjectCfg.InitialStateCfg(pos=(float(table_x), float(table_y), CUBE_SIZE / 2))
+
+    # reset_root_state_uniform samples an offset from the default (init) root state on each reset
+    cfg.events.reset_cube_position = EventTerm(
+        func=mdp.reset_root_state_uniform,
+        mode="reset",
+        params={
+            "pose_range": {"x": (0.0, spread), "y": (0.0, spread)},
+            "velocity_range": {},
+            "asset_cfg": SceneEntityCfg("cube"),
+        },
     )
 
 
@@ -158,19 +188,10 @@ class Gen3ReachEnvCfg(ReachEnvCfg):
         ) 
         
 
-        self.scene.cube = CubeCfg()
+        # Cube somewhere random on the surface of the table, re-sampled every reset (.25 is about as close to the edge as you can get)
+        add_cube_to_scene(self, spread=0.25)
 
-        # Set the starting position of the cube to be somewhere random on the surface of the table
-        table_surface = np.array(self.scene.table.init_state.pos)
-        starting_pos = np.random.rand(3) * .25 # .2 is about as close to the edge of the table as you can get
-        starting_pos[2] = 0 
 
-        starting_pos = tuple(table_surface + starting_pos)
-        # print(f"CUBE STARTING POS: {starting_pos}")
-
-        self.scene.cube.init_state = RigidObjectCfg.InitialStateCfg(pos = starting_pos)
-
-        
         # Necessary because image obs won't combine properly with the joint position obs
         self.observations.policy.concatenate_terms = False
 
@@ -240,18 +261,10 @@ class Gen3ReachWidowEnvCfg(ReachEnvCfg):
         ) 
         
 
-        self.scene.cube = CubeCfg()
+        # Cube somewhere random on the surface of the table, re-sampled every reset (.4 is about as close to the edge as you can get)
+        add_cube_to_scene(self, spread=0.4)
 
-        # Set the starting position of the cube to be somewhere random on the surface of the table
-        table_surface = np.array(self.scene.table.init_state.pos)
-        starting_pos = np.random.rand(3) * .4 # .4 is about as close to the edge of the table as you can get
-        starting_pos[2] = 0 
 
-        starting_pos = tuple(table_surface + starting_pos)
-
-        self.scene.cube.init_state = RigidObjectCfg.InitialStateCfg(pos = starting_pos)
-
-        
         # Necessary because image obs won't combine properly with the joint position obs
         self.observations.policy.concatenate_terms = False
 
@@ -278,6 +291,15 @@ class Gen3ReachWidowEnvCfg(ReachEnvCfg):
             ),
         )
 
+        # Binary gripper action (7th action dim). The host maps Octo's gripper value (1 = open, 0 = closed) onto
+        # this term's convention (>= 0 open, < 0 close). Finger targets match the WidowX 250S joint range.
+        self.actions.gripper_action = BinaryJointPositionActionCfg(
+            asset_name="robot",
+            joint_names=["left_finger", "right_finger"],
+            open_command_expr={"left_finger": 0.037, "right_finger": -0.037},
+            close_command_expr={"left_finger": 0.015, "right_finger": -0.015},
+        )
+
         # override command generator body
         self.commands.ee_pose.body_name = "wx250s_ee_gripper_link"
         self.commands.ee_pose.ranges.pitch = (math.pi / 2, math.pi / 2)
@@ -286,33 +308,24 @@ class Gen3ReachWidowEnvCfg(ReachEnvCfg):
 
 
 @configclass
+class GreenCubeCfg(CubeCfg):
+    spawn=sim_utils.CuboidCfg(
+        size = [CUBE_SIZE, CUBE_SIZE, CUBE_SIZE],
+        visible = True,
+        rigid_props=sim_utils.RigidBodyPropertiesCfg(),
+        mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
+        collision_props=sim_utils.CollisionPropertiesCfg(),
+        visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.0, 1.0, 0.0), metallic=0.2),
+    )
+
+
+@configclass
 class Gen3FindObjCfg(Gen3ReachEnvCfg):
-
-
-
+    """Same as Gen3ReachEnvCfg but with a green cube instead of a purple one."""
 
     def __post_init__(self):
         super().__post_init__()
 
-        # cfg = sim_utils.UsdFileCfg(usd_path=f"{ISAACLAB_NUCLEUS_DIR}/Robots/FrankaEmika/panda_instanceable.usd")
-        # prim_path = "{ENV_REGEX_NS}/World/Table/Asset"
-
-        # # use the `func` reference in the config class
-        # cfg.func(prim_path, cfg)
-        
-        cube_cfg = RigidObjectCfg(
-            prim_path="{ENV_REGEX_NS}/",
-            spawn=sim_utils.CuboidCfg(
-                        size = [.1,.1,.1],
-                        visible = True,
-                        rigid_props=sim_utils.RigidBodyPropertiesCfg(),
-                        mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
-                        collision_props=sim_utils.CollisionPropertiesCfg(),
-                        visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.0, 1.0, 0.0), metallic=0.2
-                    ),
-                    init_state=RigidObjectCfg.InitialStateCfg(),
-                    ),
-            )
-
-        self.scene.cube = RigidObject(cfg=cone_cfg)
+        # Replaces the purple cube added by the parent; config holds a cfg, the scene instantiates the RigidObject itself
+        add_cube_to_scene(self, spread=0.25, cube_cfg=GreenCubeCfg())
 

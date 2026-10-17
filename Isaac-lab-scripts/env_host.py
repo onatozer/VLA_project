@@ -6,6 +6,7 @@ simulation_app = app_launcher.app
 
 
 import gymnasium as gym
+import numpy as np
 import torch
 import socket
 import pickle
@@ -18,7 +19,7 @@ import traceback
 import json
 
 import isaaclab.sim as sim_utils
-from isaaclab.utils.math import quat_apply, quat_mul, quat_conjugate
+from isaaclab.utils.math import quat_from_euler_xyz, axis_angle_from_quat
 import logging
 
 logger = logging.getLogger(__name__)
@@ -74,6 +75,50 @@ def recv_exactly(sock, n):
         chunks.append(chunk)
         received += len(chunk)
     return b''.join(chunks)
+
+
+# Total action dimension the Isaac environment expects: 6 for the differential-IK arm term alone,
+# 7 if a binary gripper action term is also configured.
+ENV_ACTION_DIM = env.unwrapped.action_manager.total_action_dim
+_warned_about_gripper = False
+
+
+def octo_to_isaac_action(octo_action: torch.Tensor) -> torch.Tensor:
+    """
+    Convert a single un-normalized Octo / Bridge action into the command the Isaac env's action manager expects.
+
+    Octo (trained on Bridge) outputs: [dx, dy, dz, droll, dpitch, dyaw, gripper]
+      - position / rotation deltas are end-effector deltas expressed in the ROBOT BASE frame
+      - gripper is in [0, 1], with 1 = open and 0 = closed
+
+    Isaac Lab's DifferentialInverseKinematicsAction in relative "pose" mode expects:
+      - [dx, dy, dz] in the robot base frame (it works with the EE pose relative to the root), so no frame rotation needed
+      - [rx, ry, rz] as an axis-angle rotation vector, not euler angles
+    and BinaryJointPositionAction expects a scalar where < 0 => close, >= 0 => open.
+    """
+    global _warned_about_gripper
+
+    delta_pos = octo_action[0:3]
+
+    # Euler (roll, pitch, yaw) delta -> quaternion -> axis-angle rotation vector
+    rpy = octo_action[3:6]
+    delta_quat = quat_from_euler_xyz(rpy[0:1], rpy[1:2], rpy[2:3])   # shape (1, 4)
+    delta_rotvec = axis_angle_from_quat(delta_quat).squeeze(0)       # shape (3,)
+
+    arm_cmd = torch.cat([delta_pos, delta_rotvec])
+
+    if ENV_ACTION_DIM >= 7:
+        gripper_open = octo_action[6] > 0.5
+        gripper_cmd = torch.where(gripper_open, torch.tensor(1.0, device=octo_action.device), torch.tensor(-1.0, device=octo_action.device))
+        cmd = torch.cat([arm_cmd, gripper_cmd.reshape(1)])
+    else:
+        if not _warned_about_gripper:
+            logger.warning(f"Environment action dim is {ENV_ACTION_DIM}; no gripper action term configured, gripper command dropped")
+            _warned_about_gripper = True
+        cmd = arm_cmd
+
+    return cmd
+
 
 # Helper function that replaces all the tensors in a dictionary with numpy arrays
 def replace_tensors(input_dict: dict):
@@ -132,27 +177,16 @@ try:
                         buf = recv_exactly(conn, msg_len)
                         octo_action = pickle.loads(buf)
                         
-                        octo_action = torch.from_numpy(octo_action).float().to("cuda")
-                        
-                        # Get robot asset
-                        robot = env.unwrapped.scene["robot"]
-                        body_names = robot.data.body_names
-                        ee_body_idx = body_names.index("end_effector_link")
+                        octo_action = torch.from_numpy(np.asarray(octo_action)).float().to(env.unwrapped.device).reshape(-1)
 
-                        ee_quat_w = robot.data.body_quat_w[:, ee_body_idx].squeeze(0).float()  # EE orientation in world
-                        root_quat_w = robot.data.root_quat_w.squeeze(0)                   # base orientation in world
+                        isaac_action = octo_to_isaac_action(octo_action)
 
-                        delta_pos_world = quat_apply(ee_quat_w, octo_action[:3])                      # step 1: EE → world
-                        # delta_pos_base  = quat_apply(quat_conjugate(root_quat_w), delta_pos_world) # step 2: world → base
+                        logger.info(f"octo action:  {octo_action.cpu().numpy()}")
+                        logger.info(f"isaac action: {isaac_action.cpu().numpy()}")
 
-                        logger.info(f"action sent:     {octo_action}")
-                        logger.info(f"delta_pos_world: {delta_pos_world}")
-                        
-                        octo_action[0:3] = delta_pos_world
-                        
                         # Isaac sim expects a batch dimension
-                        octo_action = octo_action.unsqueeze(0)
-                        obs, reward, terminated, truncated, info = env.step(octo_action)
+                        isaac_action = isaac_action.unsqueeze(0)
+                        obs, reward, terminated, truncated, info = env.step(isaac_action)
 
                         # print(obs, reward, terminated, truncated, info)
                         

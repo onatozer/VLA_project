@@ -68,8 +68,10 @@ class RobotController(Node):
         self.future = Future()
         
         self.prev_images = SnapshotQueue()
-        
+
         self.bridge = CvBridge()
+        # Must exist before the first image arrives, image_callback compares against it
+        self.last_time = self.get_clock().now()
         self.create_subscription(Image, '/camera/image_raw', self.image_callback, 10)
         
         self.get_logger().debug("Finished initializing RobotController node")
@@ -208,7 +210,7 @@ class KinovaGymEnvironment(gym.Env):
         info = {}
         return obs, reward, terminated, truncated, info
 
-    def reset(self, seed, options): # arguments carry no meaning here, but still including so program doesn't error
+    def reset(self, seed=None, options=None): # arguments carry no meaning here, but still including so program doesn't error
         obs = {}
 
         images = self.node.execute_reset()
@@ -301,8 +303,9 @@ class IsaacSimGymEnvironment(gym.Env):
             s.connect(self.server_address)
             
          
-            # Numpy is going to be the data type of exchange between the client and server
-            action = np.array(action[0:6]) # removing the gripper dimension TODO: Figre out how to actually grip in the sim
+            # Numpy is going to be the data type of exchange between the client and server.
+            # The full 7-dim action is sent (xyz delta, rpy delta, gripper); the host decides what the sim can use.
+            action = np.asarray(action, dtype=np.float32).reshape(-1)
             logger.info(f"Octo action of {action}")
             action_buf = pickle.dumps(action) 
 
@@ -338,7 +341,7 @@ class IsaacSimGymEnvironment(gym.Env):
         
         return obs, reward, terminated, truncated, info
             
-    def reset(self, seed, options):
+    def reset(self, seed=None, options=None):
         # Recieve response from the environment
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
 
