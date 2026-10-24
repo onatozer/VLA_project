@@ -1,5 +1,6 @@
 import gymnasium as gym
 import numpy as np
+import cv2
 from cv_bridge import CvBridge
 from queue import Queue
 import rclpy
@@ -365,10 +366,20 @@ class IsaacSimGymEnvironment(gym.Env):
 
         return obs, reward, terminated, truncated, info
 
+    @staticmethod
+    def _to_policy_size(img, size):
+        """
+        Resize a camera frame to what the policy expects. The Bridge camera renders at 640x480 like the real Logitech
+        C920 and Octo's Bridge data was resized from that to 256x256 (aspect not preserved), so we do the same.
+        """
+        if img.shape[0] != size or img.shape[1] != size:
+            img = cv2.resize(np.ascontiguousarray(img), (size, size), interpolation=cv2.INTER_AREA)
+        return img
+
     def _build_obs(self, gym_obs):
         """Strip the sim's batch dimension (so the Octo wrappers don't break), record, and pick the keys the policy gets."""
-        primary = np.squeeze(gym_obs["vis_obs_primary"])
-        wrist = np.squeeze(gym_obs["vis_obs_wrist"])
+        primary = self._to_policy_size(np.squeeze(gym_obs["vis_obs_primary"]), 256)
+        wrist = self._to_policy_size(np.squeeze(gym_obs["vis_obs_wrist"]), 128)
 
         if self.primary_stream_writer is not None:
             self.primary_stream_writer.append_data(primary)

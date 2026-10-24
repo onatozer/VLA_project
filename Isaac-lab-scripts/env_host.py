@@ -17,9 +17,10 @@ import gen3.tasks
 import traceback
 
 import json
+import os
 
 import isaaclab.sim as sim_utils
-from isaaclab.utils.math import quat_from_euler_xyz, axis_angle_from_quat, subtract_frame_transforms
+from isaaclab.utils.math import quat_from_euler_xyz, axis_angle_from_quat
 import logging
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,8 @@ logger.setLevel("INFO") # Set to lowest level so all levels are allowed
 
 
 #Task name needs to be passed into both the parse_env_cfg function and gym.make function
-task_name = "Gen3-Reach-v0"
+# "Gen3-Reach-widowx": WidowX 250S with the Bridge camera (what Octo was trained on). "Gen3-Reach-v0": the Kinova Gen3.
+task_name = os.environ.get("OCTO_TASK", "Gen3-Reach-widowx")
 
 env_cfg = parse_env_cfg(task_name = task_name, num_envs = 1)
 
@@ -120,22 +122,6 @@ def octo_to_isaac_action(octo_action: torch.Tensor) -> torch.Tensor:
     return cmd
 
 
-_EE_BODY_NAME = env.unwrapped.cfg.actions.arm_action.body_name
-
-
-def ee_pose_in_base():
-    """
-    End-effector position (m) and quaternion (w, x, y, z) expressed in the robot base frame, the same frame the
-    policy's deltas are interpreted in. Shipped to the client in `info` so motion can be checked against commands.
-    """
-    robot = env.unwrapped.scene["robot"]
-    ee_idx = robot.find_bodies(_EE_BODY_NAME)[0][0]
-    ee_pos_w = robot.data.body_pos_w[:, ee_idx]
-    ee_quat_w = robot.data.body_quat_w[:, ee_idx]
-    pos_b, quat_b = subtract_frame_transforms(robot.data.root_pos_w, robot.data.root_quat_w, ee_pos_w, ee_quat_w)
-    return pos_b[0].cpu().numpy(), quat_b[0].cpu().numpy()
-
-
 # Helper function that replaces all the tensors in a dictionary with numpy arrays
 def replace_tensors(input_dict: dict):
     output_dict = {}
@@ -186,8 +172,7 @@ try:
                         # Convert all the torch tensors into numpy arrays to allow the pickle library to steralize the object
                         output_obs = replace_tensors(obs["policy"])
                         output_info = replace_tensors(info)
-                        output_info["ee_pos_b"], output_info["ee_quat_b"] = ee_pose_in_base()
-
+                        
                         output_dict = {"obs": output_obs, "info": output_info}
                         
                     else:
@@ -212,9 +197,7 @@ try:
                         terminated = terminated.cpu().numpy()
                         truncated = truncated.cpu().numpy()
                         info = replace_tensors(info)
-                        info["ee_pos_b"], info["ee_quat_b"] = ee_pose_in_base()
-                        logger.info(f"ee pos (base): {info['ee_pos_b']}")
-
+                        
                         output_dict = {"obs": output_obs, "reward": reward, "terminated": terminated, "truncated": truncated, "info": info}
 
 

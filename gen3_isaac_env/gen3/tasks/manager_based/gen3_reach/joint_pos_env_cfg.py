@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 import math
+import os
 import numpy as np
 
 from isaaclab.utils import configclass
@@ -90,28 +91,25 @@ class CubeCfg(RigidObjectCfg):
     )
 
 
-def add_cube_to_scene(cfg: ReachEnvCfg, spread: float, cube_cfg: RigidObjectCfg | None = None, size: float = CUBE_SIZE):
+def add_cube_to_scene(cfg: ReachEnvCfg, xy_center, x_range, y_range, cube_cfg: RigidObjectCfg | None = None, size: float = CUBE_SIZE):
     """
-    Add a cube to the scene whose position is re-sampled on EVERY reset, uniformly within `spread` meters of the
-    table origin in x and y. The cube rests on the table surface (center is half a cube-height above the table).
+    Add a cube to the scene whose position is re-sampled on EVERY reset: `xy_center` (robot base frame, metres) plus a
+    uniform offset from `x_range` / `y_range`. The cube rests on the tabletop (z = 0 is the plane the robot base sits
+    on, in every Isaac Lab version of the reach env, whereas the table prim's own origin moved between versions).
 
     Previously the position was sampled with np.random inside __post_init__, i.e. once when the config was built,
     so every episode placed the cube in exactly the same spot.
     """
     cfg.scene.cube = cube_cfg if cube_cfg is not None else CubeCfg()
     cfg.scene.cube.spawn.size = [size, size, size]
-
-    # x/y from the table prim; z from the robot mounting plane (z = 0 is the tabletop the robot base sits on, in every
-    # Isaac Lab version of the reach env, whereas the table prim's own origin moved between versions).
-    table_x, table_y, _ = cfg.scene.table.init_state.pos
-    cfg.scene.cube.init_state = RigidObjectCfg.InitialStateCfg(pos=(float(table_x), float(table_y), size / 2))
+    cfg.scene.cube.init_state = RigidObjectCfg.InitialStateCfg(pos=(float(xy_center[0]), float(xy_center[1]), size / 2))
 
     # reset_root_state_uniform samples an offset from the default (init) root state on each reset
     cfg.events.reset_cube_position = EventTerm(
         func=mdp.reset_root_state_uniform,
         mode="reset",
         params={
-            "pose_range": {"x": (0.0, spread), "y": (0.0, spread)},
+            "pose_range": {"x": tuple(x_range), "y": tuple(y_range)},
             "velocity_range": {},
             "asset_cfg": SceneEntityCfg("cube"),
         },
@@ -138,51 +136,93 @@ def configure_for_octo(cfg: ReachEnvCfg):
     cfg.sim.render_interval = cfg.decimation
 
 
-WIDOWX250_CFG = ArticulationCfg(
-    spawn=sim_utils.UsdFileCfg(
-        # /workspace/isaaclab/source/isaaclab_assets/data/Robots/Interbotix/widowx250.usd
-        usd_path="/workspace/isaaclab/source/isaaclab_assets/data/Robots/Interbotix/widowx250.usd",  # local or Nucleus path
+##
+# WidowX 250S: the Bridge dataset robot, set up the way SIMPLER (the Bridge-in-simulation benchmark) sets it up.
+# Robot description, joint gains, initial configuration and camera calibration are taken from
+# https://github.com/simpler-env/ManiSkill2_real2sim (mani_skill2_real2sim/agents/configs/widowx/defaults.py and
+# envs/custom_scenes/base_env.py). The URDF + meshes are vendored under gen3/assets/widowx and converted to USD by
+# Isaac Lab on first load (output cached in gen3/assets/widowx/usd, which is git-ignored).
+##
+
+WIDOWX_ASSET_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "assets", "widowx"))
+
+WIDOWX_ARM_JOINTS = ["waist", "shoulder", "elbow", "forearm_roll", "wrist_angle", "wrist_rotate"]
+WIDOWX_GRIPPER_JOINTS = ["left_finger", "right_finger"]
+WIDOWX_EE_BODY = "ee_gripper_link"   # the Bridge end-effector frame (between the finger tips)
+WIDOWX_GRIPPER_OPEN = 0.037          # finger joint limits from the URDF
+WIDOWX_GRIPPER_CLOSED = 0.015
+
+WIDOWX250S_CFG = ArticulationCfg(
+    spawn=sim_utils.UrdfFileCfg(
+        asset_path=os.path.join(WIDOWX_ASSET_DIR, "wx250s.urdf"),
+        usd_dir=os.path.join(WIDOWX_ASSET_DIR, "usd"),
+        fix_base=True,
+        # ee_gripper_link hangs off a fixed joint; merging fixed joints would fold it into fingers_link and the IK /
+        # reward body lookups would fail.
+        merge_fixed_joints=False,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,
             max_depenetration_velocity=5.0,
         ),
         articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-            enabled_self_collisions=True,
+            enabled_self_collisions=False,
             solver_position_iteration_count=8,
             solver_velocity_iteration_count=0,
-            fix_root_link=True,  # <-- add this
         ),
     ),
     init_state=ArticulationCfg.InitialStateCfg(
+        # SIMPLER's initial configuration for Bridge evaluations: arm up and forward, gripper fully open
         joint_pos={
-            "waist":        0.0,
-            "shoulder":     0.0,
-            "elbow":        0.0,
-            "forearm_roll": 0.0,
-            "wrist_angle":  0.0,
-            "wrist_rotate": 0.0,  
-            "left_finger":  0.015,
-            "right_finger": -0.037,
+            "waist":        -0.01840777,
+            "shoulder":      0.0398835,
+            "elbow":         0.22242722,
+            "forearm_roll": -0.00460194,
+            "wrist_angle":   1.36524296,
+            "wrist_rotate":  0.00153398,
+            "left_finger":   WIDOWX_GRIPPER_OPEN,
+            "right_finger":  WIDOWX_GRIPPER_OPEN,
         },
     ),
     actuators={
+        # Per-joint PD gains and force limits SIMPLER identified to match the real WidowX at 5 Hz
         "arm": ImplicitActuatorCfg(
-            joint_names_expr=["waist", "shoulder", "elbow",
-                              "forearm_roll", "wrist_angle", "wrist_rotate"],
-            effort_limit_sim=10.0,
-            velocity_limit_sim=3.14,
-            stiffness=800.0,
-            damping=40.0,
+            joint_names_expr=WIDOWX_ARM_JOINTS,
+            effort_limit_sim={"waist": 200.0, "shoulder": 200.0, "elbow": 100.0,
+                              "forearm_roll": 100.0, "wrist_angle": 100.0, "wrist_rotate": 100.0},
+            velocity_limit_sim=1.5,
+            stiffness={"waist": 1169.8, "shoulder": 730.0, "elbow": 808.5,
+                       "forearm_roll": 1229.1, "wrist_angle": 1272.3, "wrist_rotate": 1056.3},
+            damping={"waist": 330.0, "shoulder": 180.0, "elbow": 152.1,
+                     "forearm_roll": 309.6, "wrist_angle": 201.0, "wrist_rotate": 269.5},
         ),
         "gripper": ImplicitActuatorCfg(
-            joint_names_expr=[".*finger.*"],
-            effort_limit_sim=5.0,
-            velocity_limit_sim=1.0,
-            stiffness=200.0,
-            damping=10.0,
+            joint_names_expr=WIDOWX_GRIPPER_JOINTS,
+            effort_limit_sim=60.0,
+            velocity_limit_sim=0.12,
+            stiffness=1000.0,
+            damping=200.0,
         ),
     },
 )
+
+
+@configclass
+class BridgeCameraCfg(CameraCfg):
+    """
+    The Bridge dataset's third-person camera as calibrated by SIMPLER: a Logitech C920 (640x480, fx = fy = 623.6 px,
+    i.e. 54.3 deg horizontal FOV) mounted relative to the robot's base_link. Octo was trained on these frames resized
+    to 256x256; the client does that resize. "world" convention = camera looks along its +X, same as SAPIEN's camera.
+    """
+    prim_path = "{ENV_REGEX_NS}/Robot/base_link/Camera"
+    data_types = ["rgb"]
+    width = 640
+    height = 480
+    spawn = PinholeCameraCfg(focal_length=20.42, horizontal_aperture=20.955, clipping_range=(0.01, 10.0))
+    offset = CameraCfg.OffsetCfg(
+        pos=(0.0, -0.16, 0.336),
+        rot=(0.909182, -0.0819809, 0.347277, 0.214629),
+        convention="world",
+    )
 
 @configclass
 class Gen3ReachEnvCfg(ReachEnvCfg):
@@ -213,7 +253,7 @@ class Gen3ReachEnvCfg(ReachEnvCfg):
         
 
         # Cube somewhere random on the surface of the table, re-sampled every reset (.25 is about as close to the edge as you can get)
-        add_cube_to_scene(self, spread=0.25)
+        add_cube_to_scene(self, xy_center=self.scene.table.init_state.pos[:2], x_range=(0.0, 0.25), y_range=(0.0, 0.25))
 
 
         # Necessary because image obs won't combine properly with the joint position obs
@@ -259,58 +299,54 @@ class Gen3ReachEnvCfg(ReachEnvCfg):
 
 
 @configclass
-class Gen3ReachWidowEnvCfg(ReachEnvCfg):
+class WidowXBridgeEnvCfg(ReachEnvCfg):
+    """
+    WidowX 250S on a tabletop with the Bridge camera: the embodiment, viewpoint, control rate and start pose Octo was
+    trained on (Bridge V2), following SIMPLER's reproduction of that setup. Registered as "Gen3-Reach-widowx".
+    """
 
     def __post_init__(self):
         # post init of parent
         super().__post_init__()
 
-        # Add cameras to the scene that can actually capture visual observations
-        self.scene.primary_camera = SceneCameraCfg()
-        self.scene.wrist_camera = WristCameraCfg(prim_path = "{ENV_REGEX_NS}/Robot/wx250s_ee_gripper_link/Camera")
+        # The Bridge third-person camera, rigidly attached to the robot base like the real one
+        self.scene.primary_camera = BridgeCameraCfg()
+        # Bridge has no wrist camera; this one is only recorded for debugging and is not given to the policy
+        self.scene.wrist_camera = WristCameraCfg(prim_path="{ENV_REGEX_NS}/Robot/" + WIDOWX_EE_BODY + "/Camera")
 
-        # Add visual information to the observation
-        self.observations.policy.vis_obs_wrist = ObservationTermCfg(
-            func=mdp.image,
-            params={
-                "sensor_cfg": SceneEntityCfg(name="wrist_camera"),
-                "normalize": False
-            }
-        ) 
-        
         self.observations.policy.vis_obs_primary = ObservationTermCfg(
             func=mdp.image,
-            params={
-                "sensor_cfg": SceneEntityCfg(name="primary_camera"),
-                "normalize": False
-            }
-        ) 
-        
-
-        # Cube somewhere random on the surface of the table, re-sampled every reset (.4 is about as close to the edge as you can get).
-        # 4 cm so it fits in the WidowX gripper (~7 cm max opening) and is the size of the objects in Bridge data.
-        add_cube_to_scene(self, spread=0.4, size=0.04)
-
-
+            params={"sensor_cfg": SceneEntityCfg(name="primary_camera"), "normalize": False},
+        )
+        self.observations.policy.vis_obs_wrist = ObservationTermCfg(
+            func=mdp.image,
+            params={"sensor_cfg": SceneEntityCfg(name="wrist_camera"), "normalize": False},
+        )
         # Necessary because image obs won't combine properly with the joint position obs
         self.observations.policy.concatenate_terms = False
 
-        # Use the Widowx robot from the octo training samples 
-        self.scene.robot = WIDOWX250_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+        # Object workspace as in SIMPLER's Bridge scenes: ~0.31 m in front of the base, +-0.1 m grid.
+        # 4 cm cube: fits the gripper (7.4 cm max opening) and matches the size of Bridge objects.
+        add_cube_to_scene(self, xy_center=(0.31, 0.0), x_range=(-0.1, 0.1), y_range=(-0.1, 0.1), size=0.04)
 
-        # override events
-        self.events.reset_robot_joints.params["position_range"] = (0.75, 1.25)
+        self.scene.robot = WIDOWX250S_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
 
-        # override rewards
-        self.rewards.end_effector_position_tracking.params["asset_cfg"].body_names = ["wx250s_ee_gripper_link"]
-        self.rewards.end_effector_position_tracking_fine_grained.params["asset_cfg"].body_names = ["wx250s_ee_gripper_link"]
-        self.rewards.end_effector_orientation_tracking.params["asset_cfg"].body_names = ["wx250s_ee_gripper_link"]
+        # Bridge evaluations start from one fixed arm configuration; no joint randomisation on reset
+        self.events.reset_robot_joints.params["position_range"] = (1.0, 1.0)
 
-        # Differential IK action for the WidowX 250S
+        # The reach task's own reward / goal machinery is unused by the policy, but it must point at a body that exists
+        for term in (self.rewards.end_effector_position_tracking,
+                     self.rewards.end_effector_position_tracking_fine_grained,
+                     self.rewards.end_effector_orientation_tracking):
+            term.params["asset_cfg"].body_names = [WIDOWX_EE_BODY]
+        self.commands.ee_pose.body_name = WIDOWX_EE_BODY
+        self.commands.ee_pose.ranges.pitch = (math.pi / 2, math.pi / 2)
+
+        # Octo's xyz / rpy deltas in the base frame -> differential IK on the 6 arm joints
         self.actions.arm_action = DifferentialInverseKinematicsActionCfg(
             asset_name="robot",
-            joint_names=["waist", "shoulder", "elbow", "forearm_roll", "wrist_angle", "wrist_rotate"],
-            body_name="wx250s_ee_gripper_link",
+            joint_names=WIDOWX_ARM_JOINTS,
+            body_name=WIDOWX_EE_BODY,
             controller=DifferentialIKControllerCfg(
                 command_type="pose",
                 use_relative_mode=True,
@@ -319,21 +355,22 @@ class Gen3ReachWidowEnvCfg(ReachEnvCfg):
         )
 
         # Binary gripper action (7th action dim). The host maps Octo's gripper value (1 = open, 0 = closed) onto
-        # this term's convention (>= 0 open, < 0 close). Finger targets match the WidowX 250S joint range.
+        # this term's convention (>= 0 open, < 0 close). Both fingers use positive joint values in this URDF.
         self.actions.gripper_action = BinaryJointPositionActionCfg(
             asset_name="robot",
-            joint_names=["left_finger", "right_finger"],
-            open_command_expr={"left_finger": 0.037, "right_finger": -0.037},
-            close_command_expr={"left_finger": 0.015, "right_finger": -0.015},
+            joint_names=WIDOWX_GRIPPER_JOINTS,
+            open_command_expr={j: WIDOWX_GRIPPER_OPEN for j in WIDOWX_GRIPPER_JOINTS},
+            close_command_expr={j: WIDOWX_GRIPPER_CLOSED for j in WIDOWX_GRIPPER_JOINTS},
         )
-
-        # override command generator body
-        self.commands.ee_pose.body_name = "wx250s_ee_gripper_link"
-        self.commands.ee_pose.ranges.pitch = (math.pi / 2, math.pi / 2)
 
         configure_for_octo(self)
 
-        self.episode_length_s = 5
+        # SIMPLER's Bridge episodes: 60 steps at 5 Hz
+        self.episode_length_s = 12
+
+
+# Backwards-compatible name used by the gym registration
+Gen3ReachWidowEnvCfg = WidowXBridgeEnvCfg
 
 
 @configclass
@@ -356,5 +393,6 @@ class Gen3FindObjCfg(Gen3ReachEnvCfg):
         super().__post_init__()
 
         # Replaces the purple cube added by the parent; config holds a cfg, the scene instantiates the RigidObject itself
-        add_cube_to_scene(self, spread=0.25, cube_cfg=GreenCubeCfg())
+        add_cube_to_scene(self, xy_center=self.scene.table.init_state.pos[:2], x_range=(0.0, 0.25), y_range=(0.0, 0.25),
+                          cube_cfg=GreenCubeCfg())
 

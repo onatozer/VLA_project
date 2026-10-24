@@ -221,3 +221,5 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+# USD generated from the WidowX URDF by the Isaac Lab converter at runtime
+gen3_isaac_env/gen3/assets/widowx/usd/
