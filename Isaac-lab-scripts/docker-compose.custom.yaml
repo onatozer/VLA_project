@@ -10,7 +10,11 @@ services:
       - type: bind
         source: $ISAAC_SCRIPTS_DIR/
         target: ${DOCKER_ISAACLAB_PATH}/Isaac-lab-scripts
-      # - type: bind
-      #   source: $ISAAC_SCRIPTS_DIR/../gen3_isaac_env
-      #   target: ${DOCKER_ISAACLAB_PATH}/../sim2real
-      
+      # The Dockerfile copies gen3_isaac_env to ../sim_to_real (relative to the Isaac Lab dir) at BUILD time and
+      # pip-installs it editable from there. Without this mount, every change to the env config needs a
+      # `container.py build`; with it, the host copy shadows the baked-in one and edits take effect on the next
+      # `container.py start`. The target must be the same path the editable install points at.
+      - type: bind
+        source: $ISAAC_SCRIPTS_DIR/../gen3_isaac_env
+        target: ${DOCKER_ISAACLAB_PATH}/../sim_to_real
+
