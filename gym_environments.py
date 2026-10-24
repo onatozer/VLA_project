@@ -254,30 +254,40 @@ class IsaacSimGymEnvironment(gym.Env):
     """
 
 
-    def __init__(self, server_host: str = "172.18.0.1", server_port: int = 6_000, record_obs: bool = False):
+    def __init__(self, server_host: str = "172.18.0.1", server_port: int = 6_000, record_obs: bool = False,
+                 use_wrist_camera: bool = False):
+        """
+        use_wrist_camera: whether to hand the wrist image to the policy. The Bridge dataset Octo is being run with has NO
+            wrist camera, and Octo skips the wrist tokenizer when the key is absent (that is how it was trained on Bridge).
+            Feeding it a wrist image it never saw for this embodiment only adds out-of-distribution input. The wrist video
+            is still recorded for debugging when record_obs is set.
+        """
         super().__init__()
         self.server_address = (server_host, server_port)
-        
-        # Same observation space as the Kinova Gym environment
-        self.observation_space = gym.spaces.Dict({
+        self.use_wrist_camera = use_wrist_camera
+
+        spaces = {
             "image_primary": gym.spaces.Box(
                 low=0,
                 high=255,
                 shape=(256, 256, 3),
                 dtype=np.uint8,
             ),
-            "image_wrist": gym.spaces.Box(
+        }
+        if use_wrist_camera:
+            spaces["image_wrist"] = gym.spaces.Box(
                 low=0,
                 high=255,
                 shape=(128, 128, 3),
                 dtype=np.uint8,
-            ),
-        })
+            )
+        self.observation_space = gym.spaces.Dict(spaces)
         
         # NOTE: Hard-coded path here not ideal, but this is primarily for debugging, and also no obvious reason directory structure would change
+        # fps matches the env's control rate (5 Hz, see configure_for_octo in the env cfg) so the video plays in real time
         if record_obs:
-            self.primary_stream_writer = imageio.get_writer("Isaac-lab-scripts/video_recordings_octo/octo_primary.mp4", fps=30, codec="libx264")
-            self.wrist_stream_writer = imageio.get_writer("Isaac-lab-scripts/video_recordings_octo/octo_wrist.mp4", fps=30, codec="libx264")
+            self.primary_stream_writer = imageio.get_writer("Isaac-lab-scripts/video_recordings_octo/octo_primary.mp4", fps=5, codec="libx264")
+            self.wrist_stream_writer = imageio.get_writer("Isaac-lab-scripts/video_recordings_octo/octo_wrist.mp4", fps=5, codec="libx264")
         else:
             self.primary_stream_writer = None
             self.wrist_stream_writer = None
@@ -329,17 +339,24 @@ class IsaacSimGymEnvironment(gym.Env):
         truncated = gym_output["truncated"]
         info = gym_output["info"]
 
-        # We remove the batch dimension from each obs so that octo wrappers don't break
-        obs = {"image_primary": np.squeeze(gym_obs["vis_obs_primary"]), "image_wrist": np.squeeze(gym_obs["vis_obs_wrist"])}
+        obs = self._build_obs(gym_obs)
+
+        return obs, reward, terminated, truncated, info
+
+    def _build_obs(self, gym_obs):
+        """Strip the sim's batch dimension (so the Octo wrappers don't break), record, and pick the keys the policy gets."""
+        primary = np.squeeze(gym_obs["vis_obs_primary"])
+        wrist = np.squeeze(gym_obs["vis_obs_wrist"])
 
         if self.primary_stream_writer is not None:
-            self.primary_stream_writer.append_data(obs["image_primary"])
-
+            self.primary_stream_writer.append_data(primary)
         if self.wrist_stream_writer is not None:
-            self.wrist_stream_writer.append_data(obs["image_wrist"])
+            self.wrist_stream_writer.append_data(wrist)
 
-        
-        return obs, reward, terminated, truncated, info
+        obs = {"image_primary": primary}
+        if self.use_wrist_camera:
+            obs["image_wrist"] = wrist
+        return obs
             
     def reset(self, seed=None, options=None):
         # Recieve response from the environment
@@ -360,19 +377,18 @@ class IsaacSimGymEnvironment(gym.Env):
         # Policy key contains all the information that the policy network is permitted to see
         # gym_output = gym_output["policy"]
 
-        obs = gym_output["obs"]
         info = gym_output["info"]
 
-        obs = {"image_primary": np.squeeze(obs["vis_obs_primary"]), "image_wrist": np.squeeze(obs["vis_obs_wrist"])}
-        
+        # Start a fresh recording for the new episode
         if self.primary_stream_writer is not None:
             self.primary_stream_writer.close()
-            self.primary_stream_writer = imageio.get_writer("Isaac-lab-scripts/video_recordings_octo/octo_primary.mp4", fps=30, codec="libx264")
+            self.primary_stream_writer = imageio.get_writer("Isaac-lab-scripts/video_recordings_octo/octo_primary.mp4", fps=5, codec="libx264")
 
         if self.wrist_stream_writer is not None:
             self.wrist_stream_writer.close()
-            self.wrist_stream_writer = imageio.get_writer("Isaac-lab-scripts/video_recordings_octo/octo_wrist.mp4", fps=30, codec="libx264")
-        
+            self.wrist_stream_writer = imageio.get_writer("Isaac-lab-scripts/video_recordings_octo/octo_wrist.mp4", fps=5, codec="libx264")
+
+        obs = self._build_obs(gym_output["obs"])
 
         return obs, info
 

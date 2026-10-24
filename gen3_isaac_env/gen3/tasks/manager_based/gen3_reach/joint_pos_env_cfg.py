@@ -49,10 +49,13 @@ class BasicCameraParams(CameraCfg):
 class SceneCameraCfg(BasicCameraParams):
     # Here the camera's placed right at the environment, making it the 'outside' view
     prim_path = "{ENV_REGEX_NS}/Camera"
+    # Bridge-style third-person view: the camera sits at the far end of the table, elevated, looking back toward the
+    # robot base and down at ~40 deg, so the arm reaches "into" the frame from the far side the way it does in Bridge data.
+    # (quat = yaw 180 deg about Z, then pitch 40 deg down about Y; "world" convention means the camera looks along its +X)
+    # The previous pose, (-0.4, -0.15, 1.2) / (0.906, 0, 0.423, 0), was almost top-down, which Octo never saw in training.
     offset = CameraCfg.OffsetCfg(
-        pos=(-0.4, -0.15, 1.2),      # Above the table/robot
-        # rot=(0.707, 0.0, 0.707, 0.0),  # +90° around Y: +X → −Z (down)
-        rot = (0.906, 0.000, 0.423, 0.000),
+        pos=(1.3, 0.0, 0.7),
+        rot=(0.0, -0.3420, 0.0, 0.9397),
         convention="world",
     )
 
@@ -87,7 +90,7 @@ class CubeCfg(RigidObjectCfg):
     )
 
 
-def add_cube_to_scene(cfg: ReachEnvCfg, spread: float, cube_cfg: RigidObjectCfg | None = None):
+def add_cube_to_scene(cfg: ReachEnvCfg, spread: float, cube_cfg: RigidObjectCfg | None = None, size: float = CUBE_SIZE):
     """
     Add a cube to the scene whose position is re-sampled on EVERY reset, uniformly within `spread` meters of the
     table origin in x and y. The cube rests on the table surface (center is half a cube-height above the table).
@@ -96,11 +99,12 @@ def add_cube_to_scene(cfg: ReachEnvCfg, spread: float, cube_cfg: RigidObjectCfg 
     so every episode placed the cube in exactly the same spot.
     """
     cfg.scene.cube = cube_cfg if cube_cfg is not None else CubeCfg()
+    cfg.scene.cube.spawn.size = [size, size, size]
 
     # x/y from the table prim; z from the robot mounting plane (z = 0 is the tabletop the robot base sits on, in every
     # Isaac Lab version of the reach env, whereas the table prim's own origin moved between versions).
     table_x, table_y, _ = cfg.scene.table.init_state.pos
-    cfg.scene.cube.init_state = RigidObjectCfg.InitialStateCfg(pos=(float(table_x), float(table_y), CUBE_SIZE / 2))
+    cfg.scene.cube.init_state = RigidObjectCfg.InitialStateCfg(pos=(float(table_x), float(table_y), size / 2))
 
     # reset_root_state_uniform samples an offset from the default (init) root state on each reset
     cfg.events.reset_cube_position = EventTerm(
@@ -112,6 +116,26 @@ def add_cube_to_scene(cfg: ReachEnvCfg, spread: float, cube_cfg: RigidObjectCfg 
             "asset_cfg": SceneEntityCfg("cube"),
         },
     )
+
+
+# Bridge data was collected at 5 Hz; Octo's actions are per-step deltas at that rate and its observation history
+# assumes consecutive frames are 0.2 s apart.
+OCTO_CONTROL_DT = 0.2
+
+
+def configure_for_octo(cfg: ReachEnvCfg):
+    """
+    Make the reach environment look and behave like the setup Octo was trained on, as far as this scene allows.
+
+    - Turn off the reach task's debug visualization. With it on, the goal-pose and current-pose axis markers (the red /
+      green / blue arrows) are rendered INTO the camera images Octo sees.
+    - Run control at Bridge's 5 Hz instead of the reach env's 30 Hz. At 30 Hz each 5 Hz delta from Octo was being
+      applied six times per intended step, and the IK target moved before the arm could reach it.
+    """
+    cfg.commands.ee_pose.debug_vis = False
+
+    cfg.decimation = max(1, int(round(OCTO_CONTROL_DT / cfg.sim.dt)))
+    cfg.sim.render_interval = cfg.decimation
 
 
 WIDOWX250_CFG = ArticulationCfg(
@@ -228,6 +252,8 @@ class Gen3ReachEnvCfg(ReachEnvCfg):
         self.commands.ee_pose.body_name = "end_effector_link"
         self.commands.ee_pose.ranges.pitch = (math.pi / 2, math.pi / 2)
 
+        configure_for_octo(self)
+
         # So I don't wait an eternity for debugging
         self.episode_length_s = 12
 
@@ -261,8 +287,9 @@ class Gen3ReachWidowEnvCfg(ReachEnvCfg):
         ) 
         
 
-        # Cube somewhere random on the surface of the table, re-sampled every reset (.4 is about as close to the edge as you can get)
-        add_cube_to_scene(self, spread=0.4)
+        # Cube somewhere random on the surface of the table, re-sampled every reset (.4 is about as close to the edge as you can get).
+        # 4 cm so it fits in the WidowX gripper (~7 cm max opening) and is the size of the objects in Bridge data.
+        add_cube_to_scene(self, spread=0.4, size=0.04)
 
 
         # Necessary because image obs won't combine properly with the joint position obs
@@ -303,7 +330,9 @@ class Gen3ReachWidowEnvCfg(ReachEnvCfg):
         # override command generator body
         self.commands.ee_pose.body_name = "wx250s_ee_gripper_link"
         self.commands.ee_pose.ranges.pitch = (math.pi / 2, math.pi / 2)
-        
+
+        configure_for_octo(self)
+
         self.episode_length_s = 5
 
 

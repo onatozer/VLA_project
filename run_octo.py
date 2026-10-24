@@ -40,7 +40,8 @@ def main(args=None):
     exec_horizon = 4  # number of actions from each predicted chunk that get executed before re-planning
 
     # env = KinovaGymEnvironment()
-    env = IsaacSimGymEnvironment(record_obs = True)
+    # Bridge has no wrist camera, so Octo gets the third-person image only (the wrist video is still recorded)
+    env = IsaacSimGymEnvironment(record_obs = True, use_wrist_camera = False)
     env = HistoryWrapper(env, horizon)
     env = RHCWrapper(env, exec_horizon)
 
