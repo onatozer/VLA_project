@@ -284,13 +284,35 @@ class IsaacSimGymEnvironment(gym.Env):
         self.observation_space = gym.spaces.Dict(spaces)
         
         # NOTE: Hard-coded path here not ideal, but this is primarily for debugging, and also no obvious reason directory structure would change
+        # One file per episode (octo_primary_ep000.mp4, ...). A single fixed filename got truncated by the writer that
+        # reset() opened for the *next* episode, leaving a one-frame video in place of the episode just recorded.
+        self.record_obs = record_obs
+        self.record_dir = "Isaac-lab-scripts/video_recordings_octo"
+        self.episode_idx = -1
+        self.primary_stream_writer = None
+        self.wrist_stream_writer = None
+
+    def _rotate_writers(self):
+        """Close the current episode's recordings (if any) and open fresh ones for the next episode."""
+        self._close_writers()
+        if not self.record_obs:
+            return
+        import os
+        os.makedirs(self.record_dir, exist_ok=True)
         # fps matches the env's control rate (5 Hz, see configure_for_octo in the env cfg) so the video plays in real time
-        if record_obs:
-            self.primary_stream_writer = imageio.get_writer("Isaac-lab-scripts/video_recordings_octo/octo_primary.mp4", fps=5, codec="libx264")
-            self.wrist_stream_writer = imageio.get_writer("Isaac-lab-scripts/video_recordings_octo/octo_wrist.mp4", fps=5, codec="libx264")
-        else:
-            self.primary_stream_writer = None
-            self.wrist_stream_writer = None
+        self.primary_stream_writer = imageio.get_writer(f"{self.record_dir}/octo_primary_ep{self.episode_idx:03d}.mp4", fps=5, codec="libx264")
+        self.wrist_stream_writer = imageio.get_writer(f"{self.record_dir}/octo_wrist_ep{self.episode_idx:03d}.mp4", fps=5, codec="libx264")
+
+    def _close_writers(self):
+        for name in ("primary_stream_writer", "wrist_stream_writer"):
+            writer = getattr(self, name)
+            if writer is not None:
+                writer.close()
+                setattr(self, name, None)
+
+    def close(self):
+        self._close_writers()
+        super().close()
         
 
     def _recv_exactly(self, sock, n):
@@ -380,13 +402,8 @@ class IsaacSimGymEnvironment(gym.Env):
         info = gym_output["info"]
 
         # Start a fresh recording for the new episode
-        if self.primary_stream_writer is not None:
-            self.primary_stream_writer.close()
-            self.primary_stream_writer = imageio.get_writer("Isaac-lab-scripts/video_recordings_octo/octo_primary.mp4", fps=5, codec="libx264")
-
-        if self.wrist_stream_writer is not None:
-            self.wrist_stream_writer.close()
-            self.wrist_stream_writer = imageio.get_writer("Isaac-lab-scripts/video_recordings_octo/octo_wrist.mp4", fps=5, codec="libx264")
+        self.episode_idx += 1
+        self._rotate_writers()
 
         obs = self._build_obs(gym_output["obs"])
 

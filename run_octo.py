@@ -76,7 +76,10 @@ def main(args=None):
     else:
         print("Episode terminated")
 
+    # Put the sim back in a reset state, then flush the recordings. The episode just run is
+    # Isaac-lab-scripts/video_recordings_octo/octo_primary_ep000.mp4; the ep001 file is just this final reset frame.
     env.reset()
+    env.close()
 
     print("-"*20)
     print("File ended")
