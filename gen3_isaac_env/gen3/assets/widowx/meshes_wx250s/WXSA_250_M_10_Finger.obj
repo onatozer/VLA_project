@@ -1,7 +1,7 @@
 # Blender v3.2.2 OBJ File: ''
 # www.blender.org
-mtllib WXSA-250-M-10-Finger.mtl
-o WXSA-250-M-10-Finger
+mtllib WXSA_250_M_10_Finger.mtl
+o WXSA_250_M_10_Finger
 v -8.000000 4.262643 2.350757
 v -9.549999 4.262643 2.350757
 v -8.000000 4.952888 2.449999
@@ -310,7 +310,7 @@ vn 0.7072 0.0000 0.7070
 vn 0.0000 -0.7010 0.7132
 vn 0.7070 0.0000 -0.7072
 vn 0.0000 -0.7010 -0.7132
-usemtl Material.027
+usemtl Material_027
 s off
 f 1//1 2//1 3//1
 f 3//1 2//1 4//1

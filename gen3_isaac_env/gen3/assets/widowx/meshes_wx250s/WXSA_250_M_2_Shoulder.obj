@@ -1,7 +1,7 @@
 # Blender v3.2.2 OBJ File: ''
 # www.blender.org
-mtllib WXSA-250-M-2-Shoulder.mtl
-o WXSA-250-M-2-Shoulder
+mtllib WXSA_250_M_2_Shoulder.mtl
+o WXSA_250_M_2_Shoulder
 v 49.599998 14.249947 8.000000
 v 16.400000 14.249947 8.000000
 v 49.599998 14.249947 50.500000
@@ -1068,7 +1068,7 @@ vn -0.7220 -0.6919 0.0070
 vn -0.7071 -0.7070 0.0123
 vn 0.7071 -0.7071 0.0123
 vn 0.7220 -0.6918 0.0070
-usemtl Material.019
+usemtl Material_019
 s off
 f 1//1 2//1 3//1
 f 3//1 2//1 4//1

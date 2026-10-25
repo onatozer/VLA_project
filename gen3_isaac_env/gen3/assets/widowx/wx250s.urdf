@@ -8,13 +8,13 @@
     <visual>
       <origin rpy="0 0 1.5707963267948966" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes_wx250s/WXSA-250-M-1-Base.obj" scale="0.001 0.001 0.001"/>
+        <mesh filename="meshes_wx250s/WXSA_250_M_1_Base.obj" scale="0.001 0.001 0.001"/>
       </geometry>
     </visual>
     <collision>
       <origin rpy="0 0 1.5707963267948966" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes_wx250s/WXSA-250-M-1-Base.stl" scale="0.001 0.001 0.001"/>
+        <mesh filename="meshes_wx250s/WXSA_250_M_1_Base.stl" scale="0.001 0.001 0.001"/>
       </geometry>
     </collision>
     <inertial>
@@ -43,13 +43,13 @@
     <visual>
       <origin rpy="0 0 1.5707963267948966" xyz="0 0 -0.003"/>
       <geometry>
-        <mesh filename="meshes_wx250s/WXSA-250-M-2-Shoulder.obj" scale="0.001 0.001 0.001"/>
+        <mesh filename="meshes_wx250s/WXSA_250_M_2_Shoulder.obj" scale="0.001 0.001 0.001"/>
       </geometry>
     </visual>
     <collision>
       <origin rpy="0 0 1.5707963267948966" xyz="0 0 -0.003"/>
       <geometry>
-        <mesh filename="meshes_wx250s/WXSA-250-M-2-Shoulder.stl" scale="0.001 0.001 0.001"/>
+        <mesh filename="meshes_wx250s/WXSA_250_M_2_Shoulder.stl" scale="0.001 0.001 0.001"/>
       </geometry>
     </collision>
     <inertial>
@@ -78,13 +78,13 @@
     <visual>
       <origin rpy="0 0 1.5707963267948966" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes_wx250s/WXSA-250-M-3-UA.obj" scale="0.001 0.001 0.001"/>
+        <mesh filename="meshes_wx250s/WXSA_250_M_3_UA.obj" scale="0.001 0.001 0.001"/>
       </geometry>
     </visual>
     <collision>
       <origin rpy="0 0 1.5707963267948966" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes_wx250s/WXSA-250-M-3-UA.stl" scale="0.001 0.001 0.001"/>
+        <mesh filename="meshes_wx250s/WXSA_250_M_3_UA.stl" scale="0.001 0.001 0.001"/>
       </geometry>
     </collision>
     <inertial>
@@ -113,13 +113,13 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes_wx250s/WXSA-250-M-4-UF.obj" scale="0.001 0.001 0.001"/>
+        <mesh filename="meshes_wx250s/WXSA_250_M_4_UF.obj" scale="0.001 0.001 0.001"/>
       </geometry>
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes_wx250s/WXSA-250-M-4-UF.stl" scale="0.001 0.001 0.001"/>
+        <mesh filename="meshes_wx250s/WXSA_250_M_4_UF.stl" scale="0.001 0.001 0.001"/>
       </geometry>
     </collision>
     <inertial>
@@ -148,13 +148,13 @@
     <visual>
       <origin rpy="3.141592653589793 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes_wx250s/WXSA-250-M-5-LF.obj" scale="0.001 0.001 0.001"/>
+        <mesh filename="meshes_wx250s/WXSA_250_M_5_LF.obj" scale="0.001 0.001 0.001"/>
       </geometry>
     </visual>
     <collision>
       <origin rpy="3.141592653589793 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes_wx250s/WXSA-250-M-5-LF.stl" scale="0.001 0.001 0.001"/>
+        <mesh filename="meshes_wx250s/WXSA_250_M_5_LF.stl" scale="0.001 0.001 0.001"/>
       </geometry>
     </collision>
     <inertial>
@@ -183,13 +183,13 @@
     <visual>
       <origin rpy="0 0 1.5707963267948966" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes_wx250s/WXSA-250-M-6-Wrist.obj" scale="0.001 0.001 0.001"/>
+        <mesh filename="meshes_wx250s/WXSA_250_M_6_Wrist.obj" scale="0.001 0.001 0.001"/>
       </geometry>
     </visual>
     <collision>
       <origin rpy="0 0 1.5707963267948966" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes_wx250s/WXSA-250-M-6-Wrist.stl" scale="0.001 0.001 0.001"/>
+        <mesh filename="meshes_wx250s/WXSA_250_M_6_Wrist.stl" scale="0.001 0.001 0.001"/>
       </geometry>
     </collision>
     <inertial>
@@ -218,13 +218,13 @@
     <visual>
       <origin rpy="0 0 1.5707963267948966" xyz="-0.02 0 0"/>
       <geometry>
-        <mesh filename="meshes_wx250s/WXSA-250-M-7-Gripper.obj" scale="0.001 0.001 0.001"/>
+        <mesh filename="meshes_wx250s/WXSA_250_M_7_Gripper.obj" scale="0.001 0.001 0.001"/>
       </geometry>
     </visual>
     <collision>
       <origin rpy="0 0 1.5707963267948966" xyz="-0.02 0 0"/>
       <geometry>
-        <mesh filename="meshes_wx250s/WXSA-250-M-7-Gripper.stl" scale="0.001 0.001 0.001"/>
+        <mesh filename="meshes_wx250s/WXSA_250_M_7_Gripper.stl" scale="0.001 0.001 0.001"/>
       </geometry>
     </collision>
     <inertial>
@@ -265,13 +265,13 @@
     <visual>
       <origin rpy="0 0 1.5707963267948966" xyz="-0.0685 0 0"/>
       <geometry>
-        <mesh filename="meshes_wx250s/WXSA-250-M-8-Gripper-Prop.obj" scale="0.001 0.001 0.001"/>
+        <mesh filename="meshes_wx250s/WXSA_250_M_8_Gripper_Prop.obj" scale="0.001 0.001 0.001"/>
       </geometry>
     </visual>
     <collision>
       <origin rpy="0 0 1.5707963267948966" xyz="-0.0685 0 0"/>
       <geometry>
-        <mesh filename="meshes_wx250s/WXSA-250-M-8-Gripper-Prop.stl" scale="0.001 0.001 0.001"/>
+        <mesh filename="meshes_wx250s/WXSA_250_M_8_Gripper_Prop.stl" scale="0.001 0.001 0.001"/>
       </geometry>
     </collision>
     <inertial>
@@ -291,13 +291,13 @@
     <visual>
       <origin rpy="0 0 1.5707963267948966" xyz="-0.063 0 0"/>
       <geometry>
-        <mesh filename="meshes_wx250s/WXSA-250-M-9-Gripper-Bar.obj" scale="0.001 0.001 0.001"/>
+        <mesh filename="meshes_wx250s/WXSA_250_M_9_Gripper_Bar.obj" scale="0.001 0.001 0.001"/>
       </geometry>
     </visual>
     <collision>
       <origin rpy="0 0 1.5707963267948966" xyz="-0.063 0 0"/>
       <geometry>
-        <mesh filename="meshes_wx250s/WXSA-250-M-9-Gripper-Bar.stl" scale="0.001 0.001 0.001"/>
+        <mesh filename="meshes_wx250s/WXSA_250_M_9_Gripper_Bar.stl" scale="0.001 0.001 0.001"/>
       </geometry>
     </collision>
     <inertial>
@@ -339,13 +339,13 @@
     <visual>
       <origin rpy="3.141592653589793 3.141592653589793 0" xyz="0 0.005 0"/>
       <geometry>
-        <mesh filename="meshes_wx250s/WXSA-250-M-10-Finger.obj" scale="0.001 0.001 0.001"/>
+        <mesh filename="meshes_wx250s/WXSA_250_M_10_Finger.obj" scale="0.001 0.001 0.001"/>
       </geometry>
     </visual>
     <collision>
       <origin rpy="3.141592653589793 3.141592653589793 0" xyz="0 0.005 0"/>
       <geometry>
-        <mesh filename="meshes_wx250s/WXSA-250-M-10-Finger.stl" scale="0.001 0.001 0.001"/>
+        <mesh filename="meshes_wx250s/WXSA_250_M_10_Finger.stl" scale="0.001 0.001 0.001"/>
       </geometry>
     </collision>
     <inertial>
@@ -375,13 +375,13 @@
     <visual>
       <origin rpy="0 3.141592653589793 0" xyz="0 -0.005 0"/>
       <geometry>
-        <mesh filename="meshes_wx250s/WXSA-250-M-10-Finger.obj" scale="0.001 0.001 0.001"/>
+        <mesh filename="meshes_wx250s/WXSA_250_M_10_Finger.obj" scale="0.001 0.001 0.001"/>
       </geometry>
     </visual>
     <collision>
       <origin rpy="0 3.141592653589793 0" xyz="0 -0.005 0"/>
       <geometry>
-        <mesh filename="meshes_wx250s/WXSA-250-M-10-Finger.stl" scale="0.001 0.001 0.001"/>
+        <mesh filename="meshes_wx250s/WXSA_250_M_10_Finger.stl" scale="0.001 0.001 0.001"/>
       </geometry>
     </collision>
     <inertial>

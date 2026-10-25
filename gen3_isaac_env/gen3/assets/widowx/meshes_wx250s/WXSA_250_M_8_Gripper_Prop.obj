@@ -1,7 +1,7 @@
 # Blender v3.2.2 OBJ File: ''
 # www.blender.org
-mtllib WXSA-250-M-8-Gripper-Prop.mtl
-o WXSA-250-M-8-Gripper-Prop
+mtllib WXSA_250_M_8_Gripper_Prop.mtl
+o WXSA_250_M_8_Gripper_Prop
 v -9.329601 -66.000000 4.245120
 v -8.812337 -66.000000 5.234999
 v 2.564097 -66.000000 9.924108
@@ -357,7 +357,7 @@ vn 0.9460 0.0000 -0.3242
 vn 0.9146 0.0000 -0.4043
 vn 0.8764 0.0000 -0.4815
 vn 0.8318 0.0000 -0.5551
-usemtl Material.025
+usemtl Material_025
 s off
 f 1//1 2//1 3//1
 f 2//1 4//1 3//1

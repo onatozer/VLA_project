@@ -1,7 +1,7 @@
 # Blender v3.2.2 OBJ File: ''
 # www.blender.org
-mtllib WXSA-250-M-4-UF.mtl
-o WXSA-250-M-4-UF
+mtllib WXSA_250_M_4_UF.mtl
+o WXSA_250_M_4_UF
 v 165.000000 4.698463 -1.710101
 v 175.000000 4.698463 -1.710101
 v 165.000000 5.000000 0.000000
@@ -494,7 +494,7 @@ vn -0.2067 0.7022 -0.6813
 vn -0.0789 0.7096 -0.7002
 vn -0.0695 0.7054 -0.7054
 vn 0.7071 0.7071 0.0000
-usemtl Material.021
+usemtl Material_021
 s off
 f 1//1 2//1 3//1
 f 3//1 2//1 4//1
