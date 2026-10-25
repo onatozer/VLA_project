@@ -18,7 +18,6 @@ from isaaclab.sim.spawners.sensors import PinholeCameraCfg
 from isaaclab.assets import RigidObjectCfg, RigidObject
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 import isaaclab.sim as sim_utils
-from isaaclab.sim.converters import UrdfConverterCfg
 from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR
 from isaaclab.envs.mdp.actions.actions_cfg import DifferentialInverseKinematicsActionCfg, OperationalSpaceControllerActionCfg, BinaryJointPositionActionCfg
 from isaaclab.controllers import DifferentialIKControllerCfg, OperationalSpaceControllerCfg
@@ -173,10 +172,11 @@ WIDOWX250S_CFG = ArticulationCfg(
         merge_fixed_joints=False,
         # Drive gains written into the USD by the converter (required by the config validator). The ImplicitActuatorCfg
         # below sets the same values at runtime, so these only need to be sane.
-        joint_drive=UrdfConverterCfg.JointDriveCfg(
+        # (UrdfFileCfg subclasses UrdfConverterCfg, so the nested drive config is reachable without another import)
+        joint_drive=sim_utils.UrdfFileCfg.JointDriveCfg(
             drive_type="force",
             target_type="position",
-            gains=UrdfConverterCfg.JointDriveCfg.PDGainsCfg(
+            gains=sim_utils.UrdfFileCfg.JointDriveCfg.PDGainsCfg(
                 stiffness={**WIDOWX_STIFFNESS, **{j: WIDOWX_GRIPPER_STIFFNESS for j in WIDOWX_GRIPPER_JOINTS}},
                 damping={**WIDOWX_DAMPING, **{j: WIDOWX_GRIPPER_DAMPING for j in WIDOWX_GRIPPER_JOINTS}},
             ),
