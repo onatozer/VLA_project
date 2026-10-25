@@ -18,6 +18,7 @@ from isaaclab.sim.spawners.sensors import PinholeCameraCfg
 from isaaclab.assets import RigidObjectCfg, RigidObject
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 import isaaclab.sim as sim_utils
+from isaaclab.sim.converters import UrdfConverterCfg
 from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR
 from isaaclab.envs.mdp.actions.actions_cfg import DifferentialInverseKinematicsActionCfg, OperationalSpaceControllerActionCfg, BinaryJointPositionActionCfg
 from isaaclab.controllers import DifferentialIKControllerCfg, OperationalSpaceControllerCfg
@@ -152,6 +153,16 @@ WIDOWX_EE_BODY = "ee_gripper_link"   # the Bridge end-effector frame (between th
 WIDOWX_GRIPPER_OPEN = 0.037          # finger joint limits from the URDF
 WIDOWX_GRIPPER_CLOSED = 0.015
 
+# Per-joint PD gains and force limits SIMPLER identified to match the real WidowX at 5 Hz
+WIDOWX_STIFFNESS = {"waist": 1169.8, "shoulder": 730.0, "elbow": 808.5,
+                    "forearm_roll": 1229.1, "wrist_angle": 1272.3, "wrist_rotate": 1056.3}
+WIDOWX_DAMPING = {"waist": 330.0, "shoulder": 180.0, "elbow": 152.1,
+                  "forearm_roll": 309.6, "wrist_angle": 201.0, "wrist_rotate": 269.5}
+WIDOWX_EFFORT = {"waist": 200.0, "shoulder": 200.0, "elbow": 100.0,
+                 "forearm_roll": 100.0, "wrist_angle": 100.0, "wrist_rotate": 100.0}
+WIDOWX_GRIPPER_STIFFNESS = 1000.0
+WIDOWX_GRIPPER_DAMPING = 200.0
+
 WIDOWX250S_CFG = ArticulationCfg(
     spawn=sim_utils.UrdfFileCfg(
         asset_path=os.path.join(WIDOWX_ASSET_DIR, "wx250s.urdf"),
@@ -160,6 +171,16 @@ WIDOWX250S_CFG = ArticulationCfg(
         # ee_gripper_link hangs off a fixed joint; merging fixed joints would fold it into fingers_link and the IK /
         # reward body lookups would fail.
         merge_fixed_joints=False,
+        # Drive gains written into the USD by the converter (required by the config validator). The ImplicitActuatorCfg
+        # below sets the same values at runtime, so these only need to be sane.
+        joint_drive=UrdfConverterCfg.JointDriveCfg(
+            drive_type="force",
+            target_type="position",
+            gains=UrdfConverterCfg.JointDriveCfg.PDGainsCfg(
+                stiffness={**WIDOWX_STIFFNESS, **{j: WIDOWX_GRIPPER_STIFFNESS for j in WIDOWX_GRIPPER_JOINTS}},
+                damping={**WIDOWX_DAMPING, **{j: WIDOWX_GRIPPER_DAMPING for j in WIDOWX_GRIPPER_JOINTS}},
+            ),
+        ),
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,
             max_depenetration_velocity=5.0,
@@ -184,23 +205,19 @@ WIDOWX250S_CFG = ArticulationCfg(
         },
     ),
     actuators={
-        # Per-joint PD gains and force limits SIMPLER identified to match the real WidowX at 5 Hz
         "arm": ImplicitActuatorCfg(
             joint_names_expr=WIDOWX_ARM_JOINTS,
-            effort_limit_sim={"waist": 200.0, "shoulder": 200.0, "elbow": 100.0,
-                              "forearm_roll": 100.0, "wrist_angle": 100.0, "wrist_rotate": 100.0},
+            effort_limit_sim=WIDOWX_EFFORT,
             velocity_limit_sim=1.5,
-            stiffness={"waist": 1169.8, "shoulder": 730.0, "elbow": 808.5,
-                       "forearm_roll": 1229.1, "wrist_angle": 1272.3, "wrist_rotate": 1056.3},
-            damping={"waist": 330.0, "shoulder": 180.0, "elbow": 152.1,
-                     "forearm_roll": 309.6, "wrist_angle": 201.0, "wrist_rotate": 269.5},
+            stiffness=WIDOWX_STIFFNESS,
+            damping=WIDOWX_DAMPING,
         ),
         "gripper": ImplicitActuatorCfg(
             joint_names_expr=WIDOWX_GRIPPER_JOINTS,
             effort_limit_sim=60.0,
             velocity_limit_sim=0.12,
-            stiffness=1000.0,
-            damping=200.0,
+            stiffness=WIDOWX_GRIPPER_STIFFNESS,
+            damping=WIDOWX_GRIPPER_DAMPING,
         ),
     },
 )
