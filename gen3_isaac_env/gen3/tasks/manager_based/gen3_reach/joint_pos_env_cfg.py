@@ -11,6 +11,7 @@ from isaaclab.utils import configclass
 
 import isaaclab_tasks.manager_based.manipulation.reach.mdp as mdp
 from isaaclab_tasks.manager_based.manipulation.reach.reach_env_cfg import ReachEnvCfg
+from .mdp.actions import TargetDeltaIKActionCfg
 from isaaclab.managers import ObservationTermCfg, SceneEntityCfg
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.sensors import CameraCfg
@@ -134,6 +135,15 @@ def configure_for_octo(cfg: ReachEnvCfg):
 
     cfg.decimation = max(1, int(round(OCTO_CONTROL_DT / cfg.sim.dt)))
     cfg.sim.render_interval = cfg.decimation
+
+    # Re-render after every reset. Isaac Lab's default is NOT to, which leaves the cameras holding the frame from
+    # before the reset: the policy's first observation of an episode then shows the previous episode's cube position
+    # and arm pose, and it starts reaching for a cube that is no longer there. Two renders also flush most of the
+    # renderer's temporal accumulation (the "ghost" copies of moved objects).
+    if hasattr(cfg, "num_rerenders_on_reset"):
+        cfg.num_rerenders_on_reset = 2
+    else:
+        cfg.rerender_on_reset = True
 
 
 ##
@@ -359,8 +369,10 @@ class WidowXBridgeEnvCfg(ReachEnvCfg):
         self.commands.ee_pose.body_name = WIDOWX_EE_BODY
         self.commands.ee_pose.ranges.pitch = (math.pi / 2, math.pi / 2)
 
-        # Octo's xyz / rpy deltas in the base frame -> differential IK on the 6 arm joints
-        self.actions.arm_action = DifferentialInverseKinematicsActionCfg(
+        # Octo's xyz / rpy deltas in the base frame -> differential IK on the 6 arm joints. Position deltas accumulate
+        # on the previous target (SIMPLER's "target_delta_pose" controller, see mdp/actions.py) so that tracking lag
+        # does not eat into the commanded motion.
+        self.actions.arm_action = TargetDeltaIKActionCfg(
             asset_name="robot",
             joint_names=WIDOWX_ARM_JOINTS,
             body_name=WIDOWX_EE_BODY,
@@ -369,6 +381,7 @@ class WidowXBridgeEnvCfg(ReachEnvCfg):
                 use_relative_mode=True,
                 ik_method="dls",
             ),
+            max_target_offset=0.05,
         )
 
         # Binary gripper action (7th action dim). The host maps Octo's gripper value (1 = open, 0 = closed) onto
